@@ -1,0 +1,6 @@
+@steam_sync_HostAddress = http://localhost:5186
+
+GET {{steam_sync_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

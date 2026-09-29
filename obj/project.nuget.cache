@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "mNGpjt1l8fo=",
+  "success": true,
+  "projectFilePath": "K:\\Projekten\\MyApps\\steam-sync\\steam-sync.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\fraga\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.12\\microsoft.aspnetcore.openapi.10.0.12.nupkg.sha512",
+    "C:\\Users\\fraga\\.nuget\\packages\\microsoft.openapi\\2.12.0\\microsoft.openapi.2.12.0.nupkg.sha512"
+  ],
+  "logs": []
+}
