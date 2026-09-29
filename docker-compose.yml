@@ -1,0 +1,29 @@
+# Local stack for steam-sync worker development (uses shared achievhub DB).
+# Prefer running the full stack from ../achiev-hub/docker-compose.yml.
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ""
+      RABBITMQ_DEFAULT_PASS: ""
+
+  steam-sync-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__Postgres: ${ConnectionStrings__Postgres:-}
+      SteamApi__ApiKey: ${STEAM_API_KEY}
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: ""
+      RabbitMQ__Password: ""
+    depends_on:
+      - rabbitmq
+    deploy:
+      replicas: 2

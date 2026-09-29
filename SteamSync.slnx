@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SteamSync.Shared/SteamSync.Shared.csproj" />
+    <Project Path="src/SteamSync.Worker/SteamSync.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SteamSync.IntegrationTests/SteamSync.IntegrationTests.csproj" />
+    <Project Path="tests/SteamSync.Worker.Tests/SteamSync.Worker.Tests.csproj" />
+  </Folder>
+</Solution>
