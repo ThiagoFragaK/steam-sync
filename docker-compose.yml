@@ -1,5 +1,8 @@
-# Local stack for steam-sync worker development (uses shared achievhub DB).
-# Prefer running the full stack from ../achiev-hub/docker-compose.yml.
+# RabbitMQ + worker. Postgres comes from AchievHub via external network `hub`.
+#
+#   docker network create hub
+#   cd ../achiev-hub && docker compose -p hub up -d
+#   docker compose -p hub up --build
 
 services:
   rabbitmq:
@@ -10,6 +13,8 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - hub
 
   steam-sync-worker:
     build:
@@ -17,7 +22,7 @@ services:
       dockerfile: Dockerfile
     environment:
       DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__Postgres: ${ConnectionStrings__Postgres:-Host=host.docker.internal;Port=6110;Database=achievhub;Username=postgres;Password=postgres;SSL Mode=Disable}
+      ConnectionStrings__Postgres: ${ConnectionStrings__Postgres:-Host=postgres;Port=5432;Database=achievhub;Username=postgres;Password=postgres;SSL Mode=Disable}
       SteamApi__ApiKey: ${STEAM_API_KEY}
       RabbitMQ__Host: rabbitmq
       RabbitMQ__Port: "5672"
@@ -25,5 +30,10 @@ services:
       RabbitMQ__Password: guest
     depends_on:
       - rabbitmq
-    deploy:
-      replicas: 2
+    networks:
+      - hub
+
+networks:
+  hub:
+    external: true
+    name: hub

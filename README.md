@@ -50,9 +50,29 @@ Shared contracts live in `SteamSync.Shared` (`UserSyncJob`, queue names, sync st
 
 ## Local setup
 
-1. Start Postgres + RabbitMQ (AchievHub compose or this repo’s `docker-compose.yml`).
-2. Apply AchievHub EF migrations (includes `user_sync_status`).
-3. Configure secrets (env vars or user secrets — do not commit real keys):
+Both composes share the external Docker network `hub` (`-p hub`).
+
+1. Create the network (once):
+
+```bash
+docker network create hub
+```
+
+2. Start AchievHub Postgres + API, then RabbitMQ + worker:
+
+```bash
+export STEAM_API_KEY=YOUR_KEY
+
+cd ../achiev-hub
+docker compose -p hub up -d --build
+
+cd ../steam-sync
+docker compose -p hub up -d --build
+```
+
+3. Apply AchievHub EF migrations (includes `user_sync_status`).
+
+4. Or run the worker on the host (against published ports):
 
 ```bash
 # Worker
@@ -60,37 +80,11 @@ export SteamApi__ApiKey=YOUR_KEY
 export ConnectionStrings__Postgres="Host=localhost;Port=6110;Database=achievhub;Username=postgres;Password=postgres;SSL Mode=Disable"
 export RabbitMQ__Host=localhost
 
-# API (achiev-hub)
-export SteamApi__ApiKey=YOUR_KEY
-export Jwt__Key=your-32-char-minimum-secret-key!!
-export RabbitMQ__Host=localhost
-```
-
-4. Run the worker:
-
-```bash
 cd src/SteamSync.Worker
 dotnet run
 ```
 
-5. Full stack (from AchievHub):
-
-```bash
-cd ../achiev-hub
-docker compose up --build
-```
-
-Services typically include `api`, `steam-sync-worker` (replicas), `rabbitmq`, and `postgres`.
-
-### Worker-only Docker
-
-```bash
-# Requires STEAM_API_KEY and a reachable AchievHub Postgres
-export STEAM_API_KEY=YOUR_KEY
-docker compose up --build
-```
-
-Production-oriented layout (Railway-style private RabbitMQ + shared Postgres) is in `docker-compose.railway.yml`.
+Services: `postgres` + `api` (AchievHub), `rabbitmq` + `steam-sync-worker` (this repo), all on network `hub`.
 
 ## Configuration
 
@@ -143,6 +137,5 @@ src/SteamSync.Worker/     # Hosted worker, MassTransit consumer, EF writes, nigh
 tests/                    # Unit + integration
 Dockerfile
 docker-compose.yml
-docker-compose.railway.yml
 SteamSync.slnx
 ```
