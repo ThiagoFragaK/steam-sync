@@ -60,14 +60,16 @@ Services: `api`, `steam-sync-worker` (2 replicas), `rabbitmq`, `postgres`.
 
 ## Deploy on Railway
 
-`docker-compose.railway.yml` runs the worker and RabbitMQ. Postgres is the existing AchievHub database. The worker does not apply migrations, so that schema has to exist already.
+`docker-compose.yml` runs the worker and RabbitMQ. Postgres is the existing AchievHub database. The worker does not apply migrations, so that schema has to exist already.
 
-In the Railway project, set the config file path to `docker-compose.railway.yml` and add:
+Local `docker compose up` keeps the defaults (`guest` / `guest`, broker host `rabbitmq`, Postgres on `host.docker.internal:6110`). On Railway, override them:
 
 | Variable | Value |
 |----------|--------|
+| `DOTNET_ENVIRONMENT` | `Production` |
 | `RABBITMQ_USER` | `steam` (do not use `guest`; it cannot connect from another container) |
 | `RABBITMQ_PASSWORD` | a long random password |
+| `RABBITMQ_HOST` | `${{rabbitmq.RAILWAY_PRIVATE_DOMAIN}}` |
 | `STEAM_API_KEY` | Steam Web API key |
 | `ConnectionStrings__Postgres` | Npgsql connection string for the AchievHub database, with `SSL Mode=Require` |
 
@@ -89,7 +91,7 @@ RabbitMQ__VirtualHost=/
 
 If the API runs outside this project, expose RabbitMQ port `5672` with a TCP proxy and point the API at that host. Leave the worker private.
 
-Run **one** worker instance. Each instance includes the nightly fan-out, so a second replica enqueues that pass twice. Railway ignores Compose `deploy.replicas`; set the replica count in the service settings.
+Run **one** worker instance. Each instance includes the nightly fan-out, so a second replica enqueues that pass twice. Set the replica count to 1 in the Railway service settings.
 
 ## Queue monitoring (RabbitMQ Management UI)
 
@@ -136,6 +138,5 @@ src/SteamSync.Shared/     # UserSyncJob contract (referenced by API)
 src/SteamSync.Worker/     # Hosted worker, MassTransit consumer, EF writes
 tests/                    # Unit + integration
 Dockerfile
-docker-compose.yml            # local stack (shared AchievHub Postgres)
-docker-compose.railway.yml    # Railway: worker + RabbitMQ
+docker-compose.yml        # worker + RabbitMQ (local defaults, Railway via env)
 ```

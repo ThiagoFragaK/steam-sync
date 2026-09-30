@@ -12,11 +12,11 @@ public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.ApiName)
-            .HasMaxLength(200);
+            .HasMaxLength(500);
 
         builder.Property(e => e.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(500);
 
         builder.Property(e => e.Description)
             .HasColumnName("desc")

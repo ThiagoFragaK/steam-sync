@@ -11,9 +11,13 @@ public interface ISteamSyncService
         int maxStoreEnrich = 5,
         CancellationToken cancellationToken = default);
 
-    Task SyncGameAchievementsAsync(int userId, string steamId, int appId, CancellationToken cancellationToken = default);
-
+    /// <summary>
+    /// Full per-game sync: schema catalog, user unlocks, completion %, and store metadata when missing.
+    /// </summary>
     /// <returns>True when Steam returned usable achievement data for the game.</returns>
+    Task<bool> SyncGameAchievementsAsync(int userId, string steamId, int appId, CancellationToken cancellationToken = default);
+
+    /// <returns>True when Steam returned usable achievement data for the game (percentage only; no unlock rows).</returns>
     Task<bool> SyncGameCompletionPercentageAsync(
         int userId,
         string steamId,

@@ -53,6 +53,20 @@ public class UserSyncStatusConfiguration : IEntityTypeConfiguration<UserSyncStat
             .HasColumnName("updated_at")
             .IsRequired();
 
+        builder.Property(e => e.LockedUntil)
+            .HasColumnName("locked_until");
+
+        builder.Property(e => e.LastAutoEnqueueAt)
+            .HasColumnName("last_auto_enqueue_at");
+
+        builder.Property(e => e.ManualEnqueueDate)
+            .HasColumnName("manual_enqueue_date");
+
+        builder.Property(e => e.ManualEnqueueCount)
+            .HasColumnName("manual_enqueue_count")
+            .IsRequired()
+            .HasDefaultValue(0);
+
         builder.HasOne(e => e.User)
             .WithOne()
             .HasForeignKey<UserSyncStatus>(e => e.UserId)
