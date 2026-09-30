@@ -58,6 +58,39 @@ docker compose up --build
 
 Services: `api`, `steam-sync-worker` (2 replicas), `rabbitmq`, `postgres`.
 
+## Deploy on Railway
+
+`docker-compose.railway.yml` runs the worker and RabbitMQ. Postgres is the existing AchievHub database. The worker does not apply migrations, so that schema has to exist already.
+
+In the Railway project, set the config file path to `docker-compose.railway.yml` and add:
+
+| Variable | Value |
+|----------|--------|
+| `RABBITMQ_USER` | `steam` (do not use `guest`; it cannot connect from another container) |
+| `RABBITMQ_PASSWORD` | a long random password |
+| `STEAM_API_KEY` | Steam Web API key |
+| `ConnectionStrings__Postgres` | Npgsql connection string for the AchievHub database, with `SSL Mode=Require` |
+
+`DATABASE_URL` (`postgresql://...`) is not accepted. Use a semicolon-separated Npgsql string:
+
+```text
+Host=<host>;Port=<port>;Database=<db>;Username=<user>;Password=<password>;SSL Mode=Require
+```
+
+The achiev-hub API has to publish to this same broker. In the same Railway project, set the API to:
+
+```text
+RabbitMQ__Host=${{rabbitmq.RAILWAY_PRIVATE_DOMAIN}}
+RabbitMQ__Port=5672
+RabbitMQ__Username=<same as RABBITMQ_USER>
+RabbitMQ__Password=<same as RABBITMQ_PASSWORD>
+RabbitMQ__VirtualHost=/
+```
+
+If the API runs outside this project, expose RabbitMQ port `5672` with a TCP proxy and point the API at that host. Leave the worker private.
+
+Run **one** worker instance. Each instance includes the nightly fan-out, so a second replica enqueues that pass twice. Railway ignores Compose `deploy.replicas`; set the replica count in the service settings.
+
 ## Queue monitoring (RabbitMQ Management UI)
 
 1. Open http://localhost:15672 (guest/guest by default).
@@ -103,5 +136,6 @@ src/SteamSync.Shared/     # UserSyncJob contract (referenced by API)
 src/SteamSync.Worker/     # Hosted worker, MassTransit consumer, EF writes
 tests/                    # Unit + integration
 Dockerfile
-docker-compose.yml
+docker-compose.yml            # local stack (shared AchievHub Postgres)
+docker-compose.railway.yml    # Railway: worker + RabbitMQ
 ```
