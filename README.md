@@ -2,7 +2,7 @@
 
 Standalone **.NET 10** background worker that syncs Steam libraries and achievements into the shared [AchievHub](../achiev-hub) PostgreSQL database.
 
-Jobs are published by the AchievHub API and consumed from RabbitMQ (`steam_sync_jobs`) via MassTransit.
+Jobs are published as plain JSON `UserSyncJob` messages on RabbitMQ (`steam_sync_jobs`) and consumed by the worker via RabbitMQ.Client.
 
 ## What it does
 
@@ -35,7 +35,7 @@ Shared contracts live in `SteamSync.Shared` (`UserSyncJob`, queue names, sync st
 | Piece | Choice |
 |-------|--------|
 | Runtime | .NET 10 Worker |
-| Messaging | MassTransit + RabbitMQ |
+| Messaging | RabbitMQ.Client (JSON jobs) |
 | Database | EF Core + Npgsql (shared AchievHub schema) |
 | HTTP / resilience | `HttpClient` + Polly / standard resilience handler |
 | Logging | Serilog |
@@ -104,7 +104,7 @@ Services: `postgres` + `api` (AchievHub), `rabbitmq` + `steam-sync-worker` (this
 
 1. Open http://localhost:15672 (default `guest` / `guest`).
 2. Queues → `steam_sync_jobs` — watch Ready / Unacked depth.
-3. After MassTransit’s immediate retries (3), faults publish to the error / dead-letter topology (`steam_sync_dlx` in contracts).
+3. On failure the consumer retries up to `SyncWorker__MaxAttempts`, then publishes to the dead-letter topology (`steam_sync_dlx` / `steam_sync_jobs_dlq`).
 4. Alert guidance: queue depth &gt; 100 or failure rate &gt; 5% (pair with OpenTelemetry `jobs_failed_total` / `jobs_processed_total`).
 
 ## Troubleshooting
@@ -115,7 +115,7 @@ Services: `postgres` + `api` (AchievHub), `rabbitmq` + `steam-sync-worker` (this
 | Status `Failed` + Steam errors | Invalid API key, private Steam profile, or rate limits |
 | User stays Provisioning | Full sync never reached `Complete` (`LastFullSync` null) |
 | API register 500 on enqueue | RabbitMQ unreachable from the API container |
-| Duplicate progress worries | Multiple workers are fine; each message is processed once (MassTransit ack) |
+| Duplicate progress worries | Multiple workers are fine; each message is acked once after success or final failure |
 
 ## Tests
 
@@ -133,7 +133,7 @@ dotnet test tests/SteamSync.IntegrationTests
 
 ```
 src/SteamSync.Shared/     # UserSyncJob contract + sync status DTOs (API + worker)
-src/SteamSync.Worker/     # Hosted worker, MassTransit consumer, EF writes, nightly cron
+src/SteamSync.Worker/     # Hosted worker, RabbitMQ consumer, EF writes, nightly cron
 tests/                    # Unit + integration
 Dockerfile
 docker-compose.yml

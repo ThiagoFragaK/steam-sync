@@ -1,6 +1,6 @@
 namespace SteamSync.Shared.Messages;
 
-/// <summary>RabbitMQ / MassTransit message for a user Steam sync job.</summary>
+/// <summary>RabbitMQ message for a user Steam sync job.</summary>
 public class UserSyncJob
 {
     public Guid JobId { get; set; } = Guid.NewGuid();
@@ -45,4 +45,5 @@ public static class SyncQueueNames
 {
     public const string Jobs = "steam_sync_jobs";
     public const string DeadLetterExchange = "steam_sync_dlx";
+    public const string DeadLetterQueue = "steam_sync_jobs_dlq";
 }

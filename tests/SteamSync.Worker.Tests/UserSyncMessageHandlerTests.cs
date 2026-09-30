@@ -1,8 +1,6 @@
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Data;
@@ -38,7 +36,7 @@ public class UserSyncMessageHandlerTests
     }
 
     [Fact]
-    public async Task Consume_FullLibraryResync_CallsLibraryPriorityAndCrawl()
+    public async Task HandleAsync_FullLibraryResync_CallsLibraryPriorityAndCrawl()
     {
         await using var db = CreateDb();
         var sync = new Mock<ISteamSyncService>();
@@ -59,15 +57,13 @@ public class UserSyncMessageHandlerTests
             MsOptions.Create(new SyncWorkerOptions { BatchSize = 25, MaxStoreEnrichPerLibrarySync = 1 }),
             NullLogger<UserSyncMessageHandler>.Instance);
 
-        var context = Mock.Of<ConsumeContext<UserSyncJob>>(c =>
-            c.Message == new UserSyncJob
-            {
-                JobType = SyncJobTypes.FullLibraryResync,
-                Payload = new UserSyncPayload { UserId = 1, SteamId = "76561198000000000" }
-            } &&
-            c.CancellationToken == CancellationToken.None);
+        var job = new UserSyncJob
+        {
+            JobType = SyncJobTypes.FullLibraryResync,
+            Payload = new UserSyncPayload { UserId = 1, SteamId = "76561198000000000" }
+        };
 
-        await handler.Consume(context);
+        await handler.HandleAsync(job);
 
         sync.Verify(s => s.SyncLibraryAsync(
             1,
@@ -83,7 +79,7 @@ public class UserSyncMessageHandlerTests
     }
 
     [Fact]
-    public async Task Consume_UserSyncWithAppId_CallsGameAchievements()
+    public async Task HandleAsync_UserSyncWithAppId_CallsGameAchievements()
     {
         await using var db = CreateDb();
         var sync = new Mock<ISteamSyncService>();
@@ -97,21 +93,19 @@ public class UserSyncMessageHandlerTests
             MsOptions.Create(new SyncWorkerOptions()),
             NullLogger<UserSyncMessageHandler>.Instance);
 
-        var context = Mock.Of<ConsumeContext<UserSyncJob>>(c =>
-            c.Message == new UserSyncJob
-            {
-                JobType = SyncJobTypes.UserSync,
-                Payload = new UserSyncPayload { UserId = 1, SteamId = "76561198000000000", AppId = 730 }
-            } &&
-            c.CancellationToken == CancellationToken.None);
+        var job = new UserSyncJob
+        {
+            JobType = SyncJobTypes.UserSync,
+            Payload = new UserSyncPayload { UserId = 1, SteamId = "76561198000000000", AppId = 730 }
+        };
 
-        await handler.Consume(context);
+        await handler.HandleAsync(job);
 
         sync.Verify(s => s.SyncGameAchievementsAsync(1, "76561198000000000", 730, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task Consume_OnFailure_MarksFailedAndRethrows()
+    public async Task HandleAsync_OnFailure_MarksFailedAndRethrows()
     {
         await using var db = CreateDb();
         var sync = new Mock<ISteamSyncService>();
@@ -128,15 +122,13 @@ public class UserSyncMessageHandlerTests
             MsOptions.Create(new SyncWorkerOptions()),
             NullLogger<UserSyncMessageHandler>.Instance);
 
-        var context = Mock.Of<ConsumeContext<UserSyncJob>>(c =>
-            c.Message == new UserSyncJob
-            {
-                JobType = SyncJobTypes.RecentActivityOnly,
-                Payload = new UserSyncPayload { UserId = 1, SteamId = "76561198000000000" }
-            } &&
-            c.CancellationToken == CancellationToken.None);
+        var job = new UserSyncJob
+        {
+            JobType = SyncJobTypes.RecentActivityOnly,
+            Payload = new UserSyncPayload { UserId = 1, SteamId = "76561198000000000" }
+        };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Consume(context));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(job));
         var status = await repo.GetAsync(1);
         Assert.Equal(SteamSync.Shared.SyncStatus.Failed, status!.Status);
         Assert.Contains("steam down", status.LastError);
