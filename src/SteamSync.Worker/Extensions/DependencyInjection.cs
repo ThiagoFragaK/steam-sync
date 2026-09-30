@@ -47,8 +47,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<ISyncJobPublisher, SyncJobPublisher>();
-        services.AddHostedService<UserSyncJobConsumerHostedService>();
-        services.AddHostedService<NightlyMaintenanceWorker>();
+        services.AddHostedService<SteamSyncConsumer>();
+        services.AddHostedService<DailyUpdateWorker>();
 
         services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService("steam-sync-worker"))

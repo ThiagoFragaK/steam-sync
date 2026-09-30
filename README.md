@@ -11,7 +11,7 @@ Jobs are published as plain JSON `UserSyncJob` messages on RabbitMQ (`steam_sync
 - Syncs achievement schemas and unlock progress per game
 - Optionally enriches game metadata from the Steam Store (capped per job)
 - Tracks per-user progress in `user_sync_status` (`Pending` → `Syncing` → `Complete` / `Failed`)
-- Runs a nightly cron that fans out `recent_activity_only` (+ crawl) jobs for active users
+- Runs a daily cron that fans out `recent_activity_only` (+ crawl) jobs for active users
 
 ## Architecture
 
@@ -40,7 +40,7 @@ Shared contracts live in `SteamSync.Shared` (`UserSyncJob`, queue names, sync st
 | HTTP / resilience | `HttpClient` + Polly / standard resilience handler |
 | Logging | Serilog |
 | Metrics | OpenTelemetry (OTLP) |
-| Scheduling | Cronos (`NightlyMaintenanceWorker`) |
+| Scheduling | Cronos (`DailyUpdateWorker`) |
 
 ## Prerequisites
 
@@ -133,7 +133,7 @@ dotnet test tests/SteamSync.IntegrationTests
 
 ```
 src/SteamSync.Shared/     # UserSyncJob contract + sync status DTOs (API + worker)
-src/SteamSync.Worker/     # Hosted worker, RabbitMQ consumer, EF writes, nightly cron
+src/SteamSync.Worker/     # Hosted worker, SteamSyncConsumer, EF writes, DailyUpdateWorker
 tests/                    # Unit + integration
 Dockerfile
 docker-compose.yml
