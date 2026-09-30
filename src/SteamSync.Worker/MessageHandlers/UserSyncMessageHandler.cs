@@ -1,7 +1,5 @@
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using SteamSync.Shared;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Data;
 using SteamSync.Worker.Metrics;
@@ -12,8 +10,8 @@ using SteamSync.Worker.Services.Interfaces;
 
 namespace SteamSync.Worker.MessageHandlers;
 
-/// <summary>Consumes <see cref="UserSyncJob"/> messages from RabbitMQ.</summary>
-public class UserSyncMessageHandler : IConsumer<UserSyncJob>
+/// <summary>Handles <see cref="UserSyncJob"/> messages from RabbitMQ.</summary>
+public class UserSyncMessageHandler
 {
     private readonly ISteamSyncService _steamSyncService;
     private readonly ISyncRepository _syncRepository;
@@ -38,15 +36,13 @@ public class UserSyncMessageHandler : IConsumer<UserSyncJob>
         _logger = logger;
     }
 
-    public async Task Consume(ConsumeContext<UserSyncJob> context)
+    public async Task HandleAsync(UserSyncJob job, CancellationToken cancellationToken = default)
     {
-        var job = context.Message;
         var payload = job.Payload
             ?? throw new InvalidOperationException("UserSyncJob.Payload is required.");
 
         var userId = payload.UserId;
         var steamId = payload.SteamId;
-        var ct = context.CancellationToken;
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         _logger.LogInformation(
@@ -58,31 +54,31 @@ public class UserSyncMessageHandler : IConsumer<UserSyncJob>
 
         try
         {
-            await _steamGate.WaitAsync(ct);
+            await _steamGate.WaitAsync(cancellationToken);
             try
             {
                 var ownedCount = await _db.UsersGames.AsNoTracking()
-                    .CountAsync(ug => ug.UserId == userId, ct);
-                await _syncRepository.MarkSyncingAsync(userId, job.JobId, ownedCount, ct);
+                    .CountAsync(ug => ug.UserId == userId, cancellationToken);
+                await _syncRepository.MarkSyncingAsync(userId, job.JobId, ownedCount, cancellationToken);
 
                 var wasFull = false;
                 switch (job.JobType)
                 {
                     case SyncJobTypes.FullLibraryResync:
                         wasFull = true;
-                        await RunFullLibraryResyncAsync(userId, steamId, ct);
+                        await RunFullLibraryResyncAsync(userId, steamId, cancellationToken);
                         break;
                     case SyncJobTypes.RecentActivityOnly:
-                        await RunRecentActivityAsync(userId, steamId, payload.IncludeCrawl, ct);
+                        await RunRecentActivityAsync(userId, steamId, payload.IncludeCrawl, cancellationToken);
                         break;
                     case SyncJobTypes.UserSync:
                         if (payload.AppId is int appId)
                         {
-                            await _steamSyncService.SyncGameAchievementsAsync(userId, steamId, appId, ct);
+                            await _steamSyncService.SyncGameAchievementsAsync(userId, steamId, appId, cancellationToken);
                         }
                         else
                         {
-                            await RunRecentActivityAsync(userId, steamId, payload.IncludeCrawl, ct);
+                            await RunRecentActivityAsync(userId, steamId, payload.IncludeCrawl, cancellationToken);
                         }
                         break;
                     default:
@@ -95,15 +91,15 @@ public class UserSyncMessageHandler : IConsumer<UserSyncJob>
                             && ug.Game.HasCommunityVisibleStats == true
                             && ug.AchievementsSyncedAt != null
                             && !ug.AchievementSyncUnavailable,
-                        ct);
+                        cancellationToken);
                 var total = await _db.UsersGames.AsNoTracking()
-                    .CountAsync(ug => ug.UserId == userId && ug.Game.HasCommunityVisibleStats == true, ct);
+                    .CountAsync(ug => ug.UserId == userId && ug.Game.HasCommunityVisibleStats == true, cancellationToken);
 
-                await _syncRepository.MarkCompleteAsync(userId, wasFull, synced, total, ct);
+                await _syncRepository.MarkCompleteAsync(userId, wasFull, synced, total, cancellationToken);
 
                 if (wasFull)
                 {
-                    await _syncRepository.TryActivateProvisioningUserAsync(userId, ct);
+                    await _syncRepository.TryActivateProvisioningUserAsync(userId, cancellationToken);
                 }
 
                 SyncMetrics.JobsProcessedTotal.Add(1);
@@ -123,8 +119,8 @@ public class UserSyncMessageHandler : IConsumer<UserSyncJob>
         {
             SyncMetrics.JobsFailedTotal.Add(1);
             _logger.LogError(ex, "Job failed {JobId} user={UserId}", job.JobId, userId);
-            await _syncRepository.MarkFailedAsync(userId, ex.Message, ct);
-            throw; // MassTransit retry / DLX
+            await _syncRepository.MarkFailedAsync(userId, ex.Message, cancellationToken);
+            throw;
         }
         finally
         {

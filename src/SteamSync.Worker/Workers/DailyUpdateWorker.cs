@@ -1,27 +1,27 @@
 using Cronos;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Data;
 using SteamSync.Worker.Enums;
+using SteamSync.Worker.Messaging;
 using SteamSync.Worker.Options;
 
 namespace SteamSync.Worker.Workers;
 
-/// <summary>Enqueues per-user recent+crawl sync jobs on a nightly cron.</summary>
-public class NightlyMaintenanceWorker : BackgroundService
+/// <summary>Enqueues per-user recent+crawl sync jobs on a daily cron.</summary>
+public class DailyUpdateWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly SyncWorkerOptions _options;
-    private readonly ILogger<NightlyMaintenanceWorker> _logger;
+    private readonly ILogger<DailyUpdateWorker> _logger;
     private readonly CronExpression _nightlyCron;
     private DateTimeOffset? _nextNightly;
 
-    public NightlyMaintenanceWorker(
+    public DailyUpdateWorker(
         IServiceScopeFactory scopeFactory,
         IOptions<SyncWorkerOptions> options,
-        ILogger<NightlyMaintenanceWorker> logger)
+        ILogger<DailyUpdateWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
@@ -32,14 +32,14 @@ public class NightlyMaintenanceWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Nightly maintenance worker started (cron={Cron})", _options.NightlyCron);
+        _logger.LogInformation("Daily update worker started (cron={Cron})", _options.NightlyCron);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 await MaybeEnqueueNightlyAsync(stoppingToken);
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -47,7 +47,7 @@ public class NightlyMaintenanceWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Nightly maintenance loop error");
+                _logger.LogError(ex, "Daily update loop error");
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
@@ -63,8 +63,7 @@ public class NightlyMaintenanceWorker : BackgroundService
 
         await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<WorkerDbContext>();
-        var sendEndpointProvider = scope.ServiceProvider.GetRequiredService<ISendEndpointProvider>();
-        var endpoint = await sendEndpointProvider.GetSendEndpoint(new Uri($"queue:{SyncQueueNames.Jobs}"));
+        var publisher = scope.ServiceProvider.GetRequiredService<ISyncJobPublisher>();
 
         var users = await db.Users.AsNoTracking()
             .Where(u => u.Status == (int)StatusEnum.Active || u.Status == (int)StatusEnum.Provisioning)
@@ -74,7 +73,7 @@ public class NightlyMaintenanceWorker : BackgroundService
 
         foreach (var user in users)
         {
-            await endpoint.Send(new UserSyncJob
+            await publisher.PublishAsync(new UserSyncJob
             {
                 JobType = SyncJobTypes.RecentActivityOnly,
                 Payload = new UserSyncPayload
@@ -87,7 +86,7 @@ public class NightlyMaintenanceWorker : BackgroundService
             }, cancellationToken);
         }
 
-        _logger.LogInformation("Enqueued nightly sync for {Count} users", users.Count);
+        _logger.LogInformation("Enqueued daily sync for {Count} users", users.Count);
         _nextNightly = _nightlyCron.GetNextOccurrence(now, TimeZoneInfo.Utc);
     }
 }
