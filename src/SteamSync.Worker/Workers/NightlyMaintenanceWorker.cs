@@ -1,10 +1,10 @@
 using Cronos;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Data;
 using SteamSync.Worker.Enums;
+using SteamSync.Worker.Messaging;
 using SteamSync.Worker.Options;
 
 namespace SteamSync.Worker.Workers;
@@ -63,8 +63,7 @@ public class NightlyMaintenanceWorker : BackgroundService
 
         await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<WorkerDbContext>();
-        var sendEndpointProvider = scope.ServiceProvider.GetRequiredService<ISendEndpointProvider>();
-        var endpoint = await sendEndpointProvider.GetSendEndpoint(new Uri($"queue:{SyncQueueNames.Jobs}"));
+        var publisher = scope.ServiceProvider.GetRequiredService<ISyncJobPublisher>();
 
         var users = await db.Users.AsNoTracking()
             .Where(u => u.Status == (int)StatusEnum.Active || u.Status == (int)StatusEnum.Provisioning)
@@ -74,7 +73,7 @@ public class NightlyMaintenanceWorker : BackgroundService
 
         foreach (var user in users)
         {
-            await endpoint.Send(new UserSyncJob
+            await publisher.PublishAsync(new UserSyncJob
             {
                 JobType = SyncJobTypes.RecentActivityOnly,
                 Payload = new UserSyncPayload
