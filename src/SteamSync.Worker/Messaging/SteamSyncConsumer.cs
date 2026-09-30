@@ -9,7 +9,7 @@ using SteamSync.Worker.Options;
 namespace SteamSync.Worker.Messaging;
 
 /// <summary>Consumes <see cref="UserSyncJob"/> JSON messages from RabbitMQ.</summary>
-public sealed class UserSyncJobConsumerHostedService : BackgroundService
+public sealed class SteamSyncConsumer : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const ushort PrefetchCount = 5;
@@ -18,14 +18,14 @@ public sealed class UserSyncJobConsumerHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISyncJobPublisher _publisher;
     private readonly SyncWorkerOptions _options;
-    private readonly ILogger<UserSyncJobConsumerHostedService> _logger;
+    private readonly ILogger<SteamSyncConsumer> _logger;
 
-    public UserSyncJobConsumerHostedService(
+    public SteamSyncConsumer(
         IRabbitMqConnectionFactory connectionFactory,
         IServiceScopeFactory scopeFactory,
         ISyncJobPublisher publisher,
         IOptions<SyncWorkerOptions> options,
-        ILogger<UserSyncJobConsumerHostedService> logger)
+        ILogger<SteamSyncConsumer> logger)
     {
         _connectionFactory = connectionFactory;
         _scopeFactory = scopeFactory;
