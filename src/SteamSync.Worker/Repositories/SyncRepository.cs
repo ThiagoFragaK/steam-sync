@@ -30,6 +30,7 @@ public class SyncRepository : ISyncRepository
         row.LastJobId = jobId;
         row.LastError = null;
         row.SyncProgressPercent = 0;
+        row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(30);
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
         return row;
@@ -75,8 +76,16 @@ public class SyncRepository : ISyncRepository
         row.Status = SyncStatus.Complete;
         row.GamesSyncedCount = gamesSynced;
         row.TotalGamesCount = totalGames;
-        row.SyncProgressPercent = 100;
+        row.SyncProgressPercent = totalGames == 0
+            ? 100
+            : Math.Clamp(Math.Round((decimal)gamesSynced / totalGames * 100, 2), 0, 100);
+        if (wasFullSync)
+        {
+            row.SyncProgressPercent = 100;
+        }
+
         row.LastError = null;
+        row.LockedUntil = null;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         if (wasFullSync)
         {
@@ -90,11 +99,32 @@ public class SyncRepository : ISyncRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task MarkPartialAsync(
+        int userId,
+        int gamesSynced,
+        int totalGames,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await GetOrCreateAsync(userId, cancellationToken);
+        row.Status = SyncStatus.Partial;
+        row.GamesSyncedCount = gamesSynced;
+        row.TotalGamesCount = totalGames;
+        row.SyncProgressPercent = totalGames == 0
+            ? 100
+            : Math.Clamp(Math.Round((decimal)gamesSynced / totalGames * 100, 2), 0, 100);
+        row.LastPartialSync = DateTime.UtcNow;
+        row.LastError = null;
+        row.LockedUntil = null;
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task MarkFailedAsync(int userId, string error, CancellationToken cancellationToken = default)
     {
         var row = await GetOrCreateAsync(userId, cancellationToken);
         row.Status = SyncStatus.Failed;
         row.LastError = error.Length > 2000 ? error[..2000] : error;
+        row.LockedUntil = null;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -110,11 +140,15 @@ public class SyncRepository : ISyncRepository
             return;
         }
 
+        // New users are Active immediately; activate any legacy Provisioning accounts once Partial or Complete.
         var status = await _db.UserSyncStatuses.AsNoTracking()
             .FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
-        // Activate once a full sync has completed successfully.
-        if (status is null || status.Status != SyncStatus.Complete || status.LastFullSync is null)
+        if (status is null
+            || (status.Status != SyncStatus.Complete
+                && status.Status != SyncStatus.Partial
+                && status.LastPartialSync is null
+                && status.LastFullSync is null))
         {
             return;
         }

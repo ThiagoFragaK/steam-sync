@@ -16,5 +16,10 @@ public class UserSyncStatus
     public Guid? LastJobId { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    public DateTimeOffset? LockedUntil { get; set; }
+    public DateTimeOffset? LastAutoEnqueueAt { get; set; }
+    public DateOnly? ManualEnqueueDate { get; set; }
+    public int ManualEnqueueCount { get; set; }
+
     public User User { get; set; } = null!;
 }

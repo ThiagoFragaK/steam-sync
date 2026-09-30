@@ -23,6 +23,13 @@ public interface ISyncRepository
         int totalGames,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Marks initial/priority pass as Partial (incomplete library crawl).</summary>
+    Task MarkPartialAsync(
+        int userId,
+        int gamesSynced,
+        int totalGames,
+        CancellationToken cancellationToken = default);
+
     Task MarkFailedAsync(int userId, string error, CancellationToken cancellationToken = default);
 
     Task<UserSyncStatus?> GetAsync(int userId, CancellationToken cancellationToken = default);

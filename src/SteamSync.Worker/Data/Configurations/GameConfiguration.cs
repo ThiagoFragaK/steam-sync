@@ -13,7 +13,7 @@ public class GameConfiguration : IEntityTypeConfiguration<Game>
 
         builder.Property(e => e.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(500);
 
         builder.Property(e => e.ImageUrl)
             .HasMaxLength(500);

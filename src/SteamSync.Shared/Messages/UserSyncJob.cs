@@ -32,6 +32,12 @@ public class UserSyncPayload
 
     /// <summary>When true (e.g. nightly), also crawl unsynced achievement percentages.</summary>
     public bool IncludeCrawl { get; set; }
+
+    /// <summary>
+    /// Optional scope for <see cref="SyncJobTypes.UserSync"/> without <see cref="AppId"/>.
+    /// Use <see cref="SyncJobScopes.Initial"/> for recently played + top playtime priority pass.
+    /// </summary>
+    public string? Scope { get; set; }
 }
 
 public static class SyncJobTypes
@@ -39,6 +45,12 @@ public static class SyncJobTypes
     public const string UserSync = "user_sync";
     public const string FullLibraryResync = "full_library_resync";
     public const string RecentActivityOnly = "recent_activity_only";
+}
+
+public static class SyncJobScopes
+{
+    /// <summary>Library refresh + priority achievements (recent + top 50 by playtime); no full crawl.</summary>
+    public const string Initial = "initial";
 }
 
 public static class SyncQueueNames

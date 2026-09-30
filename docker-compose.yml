@@ -1,29 +1,44 @@
-# Local stack for steam-sync worker development (uses shared achievhub DB).
-# Prefer running the full stack from ../achiev-hub/docker-compose.yml.
+# Worker + RabbitMQ. Postgres is the shared AchievHub database.
+# Local defaults work with `docker compose up`. On Railway, set the variables in the README.
 
 services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
     ports:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
 
   steam-sync-worker:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
-      DOTNET_ENVIRONMENT: Development
+      DOTNET_ENVIRONMENT: ${DOTNET_ENVIRONMENT:-Development}
       ConnectionStrings__Postgres: ${ConnectionStrings__Postgres:-Host=host.docker.internal;Port=6110;Database=achievhub;Username=postgres;Password=postgres;SSL Mode=Disable}
       SteamApi__ApiKey: ${STEAM_API_KEY}
-      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Host: ${RABBITMQ_HOST:-rabbitmq}
       RabbitMQ__Port: "5672"
-      RabbitMQ__Username: guest
-      RabbitMQ__Password: guest
+      RabbitMQ__Username: ${RABBITMQ_USER:-guest}
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD:-guest}
+      RabbitMQ__VirtualHost: /
+      SyncWorker__Concurrency: "3"
+      SyncWorker__NightlyCron: "0 0 * * *"
     depends_on:
-      - rabbitmq
-    deploy:
-      replicas: 2
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq-data:
