@@ -1,12 +1,11 @@
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Http.Resilience;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
-using SteamSync.Shared.Messages;
 using SteamSync.Worker.Configuration;
 using SteamSync.Worker.Data;
 using SteamSync.Worker.MessageHandlers;
+using SteamSync.Worker.Messaging;
 using SteamSync.Worker.Metrics;
 using SteamSync.Worker.Options;
 using SteamSync.Worker.Repositories;
@@ -34,6 +33,7 @@ public static class DependencyInjection
         services.AddSingleton<SteamApiThrottle>();
         services.AddScoped<ISteamSyncService, SteamSyncService>();
         services.AddScoped<ISyncRepository, SyncRepository>();
+        services.AddScoped<UserSyncMessageHandler>();
 
         services.AddHttpClient<IAchievementFetcher, AchievementFetcher>()
             .AddStandardResilienceHandler(options =>
@@ -45,39 +45,10 @@ public static class DependencyInjection
                 options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
             });
 
-        var rabbit = configuration.GetSection(RabbitMqOptions.SectionName).Get<RabbitMqOptions>() ?? new RabbitMqOptions();
-        var prefetch = 5;
-
-        services.AddMassTransit(x =>
-        {
-            x.AddConsumer<UserSyncMessageHandler>();
-
-            x.UsingRabbitMq((context, cfg) =>
-            {
-                if (!string.IsNullOrWhiteSpace(rabbit.Url))
-                {
-                    cfg.Host(new Uri(rabbit.Url));
-                }
-                else
-                {
-                    cfg.Host(rabbit.Host, rabbit.Port, rabbit.VirtualHost, h =>
-                    {
-                        h.Username(rabbit.Username);
-                        h.Password(rabbit.Password);
-                    });
-                }
-
-                cfg.ReceiveEndpoint(SyncQueueNames.Jobs, e =>
-                {
-                    e.PrefetchCount = prefetch;
-                    e.UseMessageRetry(r => r.Immediate(3));
-                    e.ConfigureConsumer<UserSyncMessageHandler>(context);
-                    e.PublishFaults = true;
-                });
-            });
-        });
-
-        services.AddHostedService<NightlyMaintenanceWorker>();
+        services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
+        services.AddSingleton<ISyncJobPublisher, SyncJobPublisher>();
+        services.AddHostedService<SteamSyncConsumer>();
+        services.AddHostedService<DailyUpdateWorker>();
 
         services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService("steam-sync-worker"))

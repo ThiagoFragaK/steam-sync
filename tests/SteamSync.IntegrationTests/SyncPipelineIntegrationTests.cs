@@ -1,10 +1,12 @@
-using MassTransit;
+using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using SteamSync.Shared;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Data;
 using SteamSync.Worker.Entities;
+using SteamSync.Worker.Messaging;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 
@@ -12,6 +14,8 @@ namespace SteamSync.IntegrationTests;
 
 public class SyncPipelineIntegrationTests : IAsyncLifetime
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16-alpine")
         .WithDatabase("achievhub")
         .WithUsername("postgres")
@@ -32,7 +36,7 @@ public class SyncPipelineIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PublishUserSyncJob_IsConsumed_AndStatusCompletes()
+    public async Task PublishUserSyncJob_IsConsumed()
     {
         var options = new DbContextOptionsBuilder<WorkerDbContext>()
             .UseNpgsql(_postgres.GetConnectionString())
@@ -52,62 +56,51 @@ public class SyncPipelineIntegrationTests : IAsyncLifetime
             setup.UserSyncStatuses.Add(new UserSyncStatus
             {
                 UserId = 42,
-                Status = SyncStatus.Pending,
+                Status = SteamSync.Shared.SyncStatus.Pending,
                 UpdatedAt = DateTimeOffset.UtcNow
             });
             await setup.SaveChangesAsync();
         }
 
+        var factory = new ConnectionFactory { Uri = new Uri(_rabbit.GetConnectionString()) };
+        await using var connection = await factory.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        await RabbitMqTopology.DeclareAsync(channel);
+
         var consumed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        await using var provider = new ServiceCollection()
-            .AddMassTransit(x =>
+        var consumer = new AsyncEventingBasicConsumer(channel);
+        consumer.ReceivedAsync += async (_, ea) =>
+        {
+            try
             {
-                x.AddConsumer<RecordingConsumer>();
-                x.UsingRabbitMq((ctx, cfg) =>
-                {
-                    cfg.Host(_rabbit.GetConnectionString());
-                    cfg.ReceiveEndpoint(SyncQueueNames.Jobs, e =>
-                    {
-                        e.ConfigureConsumer<RecordingConsumer>(ctx);
-                    });
-                });
-            })
-            .AddSingleton(consumed)
-            .BuildServiceProvider(true);
-
-        var bus = provider.GetRequiredService<IBusControl>();
-        await bus.StartAsync();
-        try
-        {
-            var endpoint = await bus.GetSendEndpoint(new Uri($"queue:{SyncQueueNames.Jobs}"));
-            var job = new UserSyncJob
+                var job = JsonSerializer.Deserialize<UserSyncJob>(ea.Body.Span, JsonOptions);
+                consumed.TrySetResult(job?.Payload.UserId == 42);
+                await channel.BasicAckAsync(ea.DeliveryTag, multiple: false);
+            }
+            catch (Exception ex)
             {
-                JobType = SyncJobTypes.UserSync,
-                Payload = new UserSyncPayload { UserId = 42, SteamId = "76561198000000042", AppId = 730 }
-            };
-            await endpoint.Send(job);
+                consumed.TrySetException(ex);
+            }
+        };
 
-            var completed = await Task.WhenAny(consumed.Task, Task.Delay(TimeSpan.FromSeconds(30)));
-            Assert.Same(consumed.Task, completed);
-            Assert.True(await consumed.Task);
-        }
-        finally
+        await channel.BasicConsumeAsync(SyncQueueNames.Jobs, autoAck: false, consumer);
+
+        var job = new UserSyncJob
         {
-            await bus.StopAsync();
-        }
-    }
+            JobType = SyncJobTypes.UserSync,
+            Payload = new UserSyncPayload { UserId = 42, SteamId = "76561198000000042", AppId = 730 }
+        };
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
+        var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
+        await channel.BasicPublishAsync(
+            exchange: string.Empty,
+            routingKey: SyncQueueNames.Jobs,
+            mandatory: false,
+            basicProperties: props,
+            body: body);
 
-    private sealed class RecordingConsumer : IConsumer<UserSyncJob>
-    {
-        private readonly TaskCompletionSource<bool> _tcs;
-
-        public RecordingConsumer(TaskCompletionSource<bool> tcs) => _tcs = tcs;
-
-        public Task Consume(ConsumeContext<UserSyncJob> context)
-        {
-            _tcs.TrySetResult(context.Message.Payload.UserId == 42);
-            return Task.CompletedTask;
-        }
+        var completed = await Task.WhenAny(consumed.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+        Assert.Same(consumed.Task, completed);
+        Assert.True(await consumed.Task);
     }
 }
