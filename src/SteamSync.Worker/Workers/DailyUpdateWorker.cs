@@ -2,10 +2,13 @@ using Cronos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SteamSync.Shared.Messages;
-using SteamSync.Worker.Data;
-using SteamSync.Worker.Enums;
-using SteamSync.Worker.Messaging;
-using SteamSync.Worker.Options;
+using SteamSync.Worker.Infrastructure.Persistence;
+using SteamSync.Worker.Domain.Enums;
+using SteamSync.Worker.Application.Steam;
+using SteamSync.Worker.Application.Steam.Interfaces;
+using SteamSync.Worker.Infrastructure.Messaging;
+using SteamSync.Worker.Infrastructure.Messaging.Interfaces;
+using SteamSync.Worker.Infrastructure.Options;
 
 namespace SteamSync.Worker.Workers;
 
