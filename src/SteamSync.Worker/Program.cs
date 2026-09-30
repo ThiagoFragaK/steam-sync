@@ -1,6 +1,6 @@
 using Serilog;
 using SteamSync.Worker.Extensions;
-using SteamSync.Worker.Options;
+using SteamSync.Worker.Infrastructure.Options;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
