@@ -1,11 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using SteamSync.Shared;
-using SteamSync.Worker.Application.Steam;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Domain.Entities;
-using SteamSync.Worker.Domain.Interfaces;
 using SteamSync.Worker.Domain.Enums;
-using SteamSync.Worker.Infrastructure.Persistence;
 
 namespace SteamSync.Worker.Infrastructure.Persistence;
 
@@ -51,6 +48,83 @@ public class SyncRepository : ISyncRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task StartPipelineWaveAsync(
+        int userId,
+        Guid jobId,
+        PipelineStage stage,
+        int totalGames,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await GetOrCreateAsync(userId, cancellationToken);
+        row.Status = SyncStatus.Syncing;
+        row.LastJobId = jobId;
+        row.PipelineStage = stage;
+        row.TotalGamesCount = Math.Max(0, totalGames);
+        row.GamesSyncedCount = 0;
+        row.SyncProgressPercent = totalGames <= 0 ? 100 : 0;
+        row.LastError = null;
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetPipelineStageAsync(
+        int userId,
+        PipelineStage stage,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await GetOrCreateAsync(userId, cancellationToken);
+        row.PipelineStage = stage;
+        row.Status = SyncStatus.Syncing;
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<WaveProgressSnapshot?> IncrementWaveProgressAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        await _db.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE user_sync_status
+            SET games_synced_count = games_synced_count + 1,
+                sync_progress_percent = CASE
+                    WHEN total_games_count <= 0 THEN 100
+                    ELSE LEAST(100, ROUND((games_synced_count + 1)::numeric * 100 / total_games_count, 2))
+                END,
+                status = {(int)SyncStatus.Syncing},
+                updated_at = {DateTimeOffset.UtcNow}
+            WHERE user_id = {userId}", cancellationToken);
+
+        var row = await _db.UserSyncStatuses.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        return new WaveProgressSnapshot(
+            row.GamesSyncedCount,
+            row.TotalGamesCount,
+            row.PipelineStage,
+            row.SyncProgressPercent);
+    }
+
+    public async Task<bool> TryAdvancePipelineStageAsync(
+        int userId,
+        PipelineStage expectedStage,
+        PipelineStage nextStage,
+        CancellationToken cancellationToken = default)
+    {
+        var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE user_sync_status
+            SET pipeline_stage = {(int)nextStage},
+                status = {(int)SyncStatus.Syncing},
+                updated_at = {DateTimeOffset.UtcNow}
+            WHERE user_id = {userId}
+              AND pipeline_stage = {(int)expectedStage}", cancellationToken);
+
+        return affected > 0;
+    }
+
     public async Task UpdateProgressAsync(
         int userId,
         int gamesSynced,
@@ -76,6 +150,7 @@ public class SyncRepository : ISyncRepository
     {
         var row = await GetOrCreateAsync(userId, cancellationToken);
         row.Status = SyncStatus.Complete;
+        row.PipelineStage = PipelineStage.Done;
         row.GamesSyncedCount = gamesSynced;
         row.TotalGamesCount = totalGames;
         row.SyncProgressPercent = 100;
@@ -97,6 +172,14 @@ public class SyncRepository : ISyncRepository
     {
         var row = await GetOrCreateAsync(userId, cancellationToken);
         row.Status = SyncStatus.Failed;
+        row.LastError = error.Length > 2000 ? error[..2000] : error;
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetLastErrorAsync(int userId, string error, CancellationToken cancellationToken = default)
+    {
+        var row = await GetOrCreateAsync(userId, cancellationToken);
         row.LastError = error.Length > 2000 ? error[..2000] : error;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
@@ -124,6 +207,22 @@ public class SyncRepository : ISyncRepository
         user.Status = (int)StatusEnum.Active;
         await _db.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("User {UserId} activated after FirstSync", userId);
+    }
+
+    public async Task ActivateUserAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return;
+        }
+
+        if (user.Status is (int)StatusEnum.FirstSync or (int)StatusEnum.Syncing)
+        {
+            user.Status = (int)StatusEnum.Active;
+            await _db.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("User {UserId} activated after full sync pipeline", userId);
+        }
     }
 
     private async Task<UserSyncStatus> GetOrCreateAsync(int userId, CancellationToken cancellationToken)
