@@ -69,7 +69,10 @@ public class DailyUpdateWorker : BackgroundService
         var publisher = scope.ServiceProvider.GetRequiredService<ISyncJobPublisher>();
 
         var users = await db.Users.AsNoTracking()
-            .Where(u => u.Status == (int)StatusEnum.Active || u.Status == (int)StatusEnum.Provisioning)
+            .Where(u =>
+                u.Status == (int)StatusEnum.Active
+                || u.Status == (int)StatusEnum.FirstSync
+                || u.Status == (int)StatusEnum.Syncing)
             .Where(u => u.SteamId != null)
             .Select(u => new { u.Id, u.SteamId })
             .ToListAsync(cancellationToken);

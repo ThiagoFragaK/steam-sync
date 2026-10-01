@@ -34,11 +34,26 @@ public class UserSyncPayload
     public bool IncludeCrawl { get; set; }
 }
 
+/// <summary>High-priority first sync after registration (recently played games).</summary>
+public class FirstSyncJob
+{
+    public Guid JobId { get; set; } = Guid.NewGuid();
+
+    public int UserId { get; set; }
+
+    public string SteamId { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public int RetryCount { get; set; }
+}
+
 public static class SyncJobTypes
 {
     public const string UserSync = "user_sync";
     public const string FullLibraryResync = "full_library_resync";
     public const string RecentActivityOnly = "recent_activity_only";
+    public const string FirstSync = "first_sync";
 }
 
 public static class SyncQueueNames
@@ -46,4 +61,8 @@ public static class SyncQueueNames
     public const string Jobs = "steam_sync_jobs";
     public const string DeadLetterExchange = "steam_sync_dlx";
     public const string DeadLetterQueue = "steam_sync_jobs_dlq";
+
+    public const string FirstSync = "first_sync";
+    public const string FirstSyncDeadLetterExchange = "first_sync_dlx";
+    public const string FirstSyncDeadLetterQueue = "first_sync_dlq";
 }

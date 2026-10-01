@@ -108,7 +108,7 @@ public class SyncRepository : ISyncRepository
     public async Task TryActivateProvisioningUserAsync(int userId, CancellationToken cancellationToken = default)
     {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-        if (user is null || user.Status != (int)StatusEnum.Provisioning)
+        if (user is null || user.Status != (int)StatusEnum.FirstSync)
         {
             return;
         }
@@ -116,15 +116,14 @@ public class SyncRepository : ISyncRepository
         var status = await _db.UserSyncStatuses.AsNoTracking()
             .FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
-        // Activate once a full sync has completed successfully.
-        if (status is null || status.Status != SyncStatus.Complete || status.LastFullSync is null)
+        if (status is null || status.Status != SyncStatus.Complete)
         {
             return;
         }
 
         user.Status = (int)StatusEnum.Active;
         await _db.SaveChangesAsync(cancellationToken);
-        _logger.LogInformation("User {UserId} activated after provisioning sync", userId);
+        _logger.LogInformation("User {UserId} activated after FirstSync", userId);
     }
 
     private async Task<UserSyncStatus> GetOrCreateAsync(int userId, CancellationToken cancellationToken)
