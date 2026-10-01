@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using SteamSync.Shared;
+using SteamSync.Shared.Messages;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Domain.Enums;
 using SteamSync.Worker.Infrastructure.Persistence;
@@ -9,17 +11,20 @@ public class FirstSyncHandler
 {
     private readonly ISteamSyncService _steamSyncService;
     private readonly ISyncRepository _syncRepository;
+    private readonly ISyncJobPublisher _publisher;
     private readonly WorkerDbContext _db;
     private readonly ILogger<FirstSyncHandler> _logger;
 
     public FirstSyncHandler(
         ISteamSyncService steamSyncService,
         ISyncRepository syncRepository,
+        ISyncJobPublisher publisher,
         WorkerDbContext db,
         ILogger<FirstSyncHandler> logger)
     {
         _steamSyncService = steamSyncService;
         _syncRepository = syncRepository;
+        _publisher = publisher;
         _db = db;
         _logger = logger;
     }
@@ -41,27 +46,64 @@ public class FirstSyncHandler
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
                 ?? throw new InvalidOperationException($"User {userId} was not found.");
 
-            var gameCount = await _db.UsersGames.CountAsync(ug => ug.UserId == userId, cancellationToken);
-
-            // Phase 1 interim: promote to Active so register UI can finish.
-            // Phase 2 will keep Syncing until GamesListSync / achievements complete.
-            if (user.Status == (int)StatusEnum.FirstSync)
+            if (user.Status is (int)StatusEnum.FirstSync or (int)StatusEnum.Active)
             {
-                user.Status = (int)StatusEnum.Active;
+                user.Status = (int)StatusEnum.Syncing;
                 await _db.SaveChangesAsync(cancellationToken);
             }
 
-            await _syncRepository.MarkCompleteAsync(
+            var steamAppIds = await _db.UsersGames
+                .AsNoTracking()
+                .Where(ug => ug.UserId == userId && ug.Game.GameSteamId != null)
+                .Select(ug => ug.Game.GameSteamId)
+                .ToListAsync(cancellationToken);
+
+            var appIds = SyncPipelineHelper.ParseSteamAppIds(steamAppIds);
+
+            if (appIds.Count == 0)
+            {
+                await _syncRepository.SetPipelineStageAsync(userId, PipelineStage.FullLibrary, cancellationToken);
+                await _syncRepository.ActivateUserAsync(userId, cancellationToken);
+                await _publisher.PublishSyncLibraryAsync(
+                    new SyncLibraryJob
+                    {
+                        JobId = Guid.NewGuid(),
+                        UserId = userId,
+                        SteamId = steamId
+                    },
+                    cancellationToken);
+
+                _logger.LogInformation(
+                    "FirstSync for user {UserId}: no recent games; user Active, published SyncLibrary",
+                    userId);
+                return;
+            }
+
+            await _syncRepository.StartPipelineWaveAsync(
                 userId,
-                wasFullSync: false,
-                gamesSynced: gameCount,
-                totalGames: gameCount,
+                jobId,
+                PipelineStage.RecentAchievements,
+                appIds.Count,
                 cancellationToken);
 
+            foreach (var chunk in SyncPipelineHelper.ChunkDistinctAppIds(appIds))
+            {
+                await _publisher.PublishGamesListSyncAsync(
+                    new GamesListSyncJob
+                    {
+                        JobId = Guid.NewGuid(),
+                        UserId = userId,
+                        SteamId = steamId,
+                        AppIds = chunk,
+                        Priority = SyncJobPriorities.High
+                    },
+                    cancellationToken);
+            }
+
             _logger.LogInformation(
-                "FirstSync completed for user {UserId}: {GameCount} recent games",
+                "FirstSync for user {UserId}: {GameCount} recent games; published GamesListSync chunks",
                 userId,
-                gameCount);
+                appIds.Count);
         }
         catch (Exception ex)
         {

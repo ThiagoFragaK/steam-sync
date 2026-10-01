@@ -12,6 +12,7 @@ public class UserSyncStatus
     public int GamesSyncedCount { get; set; }
     public int TotalGamesCount { get; set; }
     public SyncStatus Status { get; set; } = SyncStatus.Pending;
+    public PipelineStage PipelineStage { get; set; } = PipelineStage.None;
     public string? LastError { get; set; }
     public Guid? LastJobId { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

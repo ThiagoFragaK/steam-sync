@@ -11,6 +11,8 @@ public class SyncSummaryDto
     public decimal Percent { get; set; }
     public string? LastError { get; set; }
     public Guid? LastJobId { get; set; }
+    public int PipelineStage { get; set; }
+    public string? PipelineStageLabel { get; set; }
     public bool Enqueued { get; set; } = true;
 
     public static SyncSummaryDto Empty { get; } = new();
@@ -24,7 +26,8 @@ public class SyncSummaryDto
         decimal percent,
         string? lastError = null,
         Guid? lastJobId = null,
-        bool enqueued = true) =>
+        bool enqueued = true,
+        PipelineStage stage = SteamSync.Shared.PipelineStage.None) =>
         new()
         {
             Status = status.ToString(),
@@ -35,6 +38,8 @@ public class SyncSummaryDto
             Percent = percent,
             LastError = lastError,
             LastJobId = lastJobId,
+            PipelineStage = (int)stage,
+            PipelineStageLabel = stage.ToString(),
             Enqueued = enqueued
         };
 }

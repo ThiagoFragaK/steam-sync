@@ -11,4 +11,16 @@ public interface ISyncJobPublisher
     Task PublishFirstSyncAsync(FirstSyncJob job, CancellationToken cancellationToken = default);
 
     Task PublishFirstSyncDeadLetterAsync(FirstSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishGamesListSyncAsync(GamesListSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishGamesListSyncDeadLetterAsync(GamesListSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishUserAchievementsSyncAsync(UserAchievementsSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishUserAchievementsSyncDeadLetterAsync(UserAchievementsSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishSyncLibraryAsync(SyncLibraryJob job, CancellationToken cancellationToken = default);
+
+    Task PublishSyncLibraryDeadLetterAsync(SyncLibraryJob job, CancellationToken cancellationToken = default);
 }
