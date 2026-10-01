@@ -51,6 +51,34 @@ public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
             cancellationToken: cancellationToken);
     }
 
+    public async Task PublishFirstSyncAsync(FirstSyncJob job, CancellationToken cancellationToken = default)
+    {
+        var channel = await EnsureChannelAsync(cancellationToken);
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
+        var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
+        await channel.BasicPublishAsync(
+            exchange: string.Empty,
+            routingKey: SyncQueueNames.FirstSync,
+            mandatory: false,
+            basicProperties: props,
+            body: body,
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task PublishFirstSyncDeadLetterAsync(FirstSyncJob job, CancellationToken cancellationToken = default)
+    {
+        var channel = await EnsureChannelAsync(cancellationToken);
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
+        var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
+        await channel.BasicPublishAsync(
+            exchange: SyncQueueNames.FirstSyncDeadLetterExchange,
+            routingKey: SyncQueueNames.FirstSyncDeadLetterQueue,
+            mandatory: false,
+            basicProperties: props,
+            body: body,
+            cancellationToken: cancellationToken);
+    }
+
     private async Task<IChannel> EnsureChannelAsync(CancellationToken cancellationToken)
     {
         if (_channel is { IsOpen: true })

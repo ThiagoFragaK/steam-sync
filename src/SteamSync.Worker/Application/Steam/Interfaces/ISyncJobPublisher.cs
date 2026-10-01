@@ -1,9 +1,14 @@
 using SteamSync.Shared.Messages;
 
 namespace SteamSync.Worker.Application.Steam.Interfaces;
+
 public interface ISyncJobPublisher
 {
     Task PublishAsync(UserSyncJob job, CancellationToken cancellationToken = default);
 
     Task PublishDeadLetterAsync(UserSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishFirstSyncAsync(FirstSyncJob job, CancellationToken cancellationToken = default);
+
+    Task PublishFirstSyncDeadLetterAsync(FirstSyncJob job, CancellationToken cancellationToken = default);
 }
