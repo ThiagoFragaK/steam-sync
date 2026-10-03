@@ -34,6 +34,10 @@ public static class DependencyInjection
         services.AddScoped<ISteamSyncService, SteamSyncService>();
         services.AddScoped<ISyncRepository, SyncRepository>();
         services.AddScoped<UserSyncMessageHandler>();
+        services.AddScoped<FirstSyncHandler>();
+        services.AddScoped<GamesListSyncHandler>();
+        services.AddScoped<UserAchievementsSyncHandler>();
+        services.AddScoped<SyncLibraryHandler>();
 
         services.AddHttpClient<IAchievementFetcher, AchievementFetcher>()
             .AddStandardResilienceHandler(options =>
@@ -48,6 +52,11 @@ public static class DependencyInjection
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<ISyncJobPublisher, SyncJobPublisher>();
         services.AddHostedService<SteamSyncConsumer>();
+        services.AddHostedService<FirstSyncConsumer>();
+        services.AddHostedService<GamesListSyncConsumer>();
+        services.AddHostedService<UserAchievementsSyncHighConsumer>();
+        services.AddHostedService<UserAchievementsSyncLowConsumer>();
+        services.AddHostedService<SyncLibraryConsumer>();
         services.AddHostedService<DailyUpdateWorker>();
 
         services.AddOpenTelemetry()
