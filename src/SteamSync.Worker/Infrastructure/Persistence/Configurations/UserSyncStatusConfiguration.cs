@@ -43,6 +43,12 @@ public class UserSyncStatusConfiguration : IEntityTypeConfiguration<UserSyncStat
             .HasConversion<int>()
             .HasDefaultValue(SteamSync.Shared.SyncStatus.Pending);
 
+        builder.Property(e => e.PipelineStage)
+            .HasColumnName("pipeline_stage")
+            .IsRequired()
+            .HasConversion<int>()
+            .HasDefaultValue(SteamSync.Shared.PipelineStage.None);
+
         builder.Property(e => e.LastError)
             .HasColumnName("last_error")
             .HasMaxLength(2000);
