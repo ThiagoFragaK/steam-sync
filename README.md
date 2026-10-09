@@ -28,7 +28,7 @@ achiev-hub API  --publish UserSyncJob-->  RabbitMQ  -->  steam-sync Worker (×N)
 | `recent_activity_only` | Recent games + priority sync (+ crawl when `IncludeCrawl`) |
 | `user_sync` | Single-game achievements when `AppId` is set; otherwise recent activity |
 
-Shared contracts live in `SteamSync.Shared` (`UserSyncJob`, queue names, sync status) and are referenced by both this worker and the AchievHub API.
+Message contracts live in `SteamSync.Shared` (`UserSyncJob`, queue names, sync status). Publishers keep their own copy of the queue names and message shapes; nothing outside this repo references these projects.
 
 ## Tech stack
 
@@ -50,32 +50,26 @@ Shared contracts live in `SteamSync.Shared` (`UserSyncJob`, queue names, sync st
 
 ## Local setup
 
-Both composes share the external Docker network `hub` (`-p hub`).
-
-1. Create the network (once):
-
-```bash
-docker network create hub
-```
-
-2. Start AchievHub Postgres + API, then RabbitMQ + worker:
+The compose file runs only the worker. It does not start RabbitMQ or Postgres; it connects to an existing broker and
+database through configuration (by default, the ones published on the Docker host).
 
 ```bash
 export STEAM_API_KEY=YOUR_KEY
-
-cd ../achiev-hub
-docker compose -p hub up -d --build
-
-cd ../steam-sync
-docker compose -p hub up -d --build
+docker compose up -d --build
 ```
 
-3. Apply AchievHub EF migrations (includes `user_sync_status`).
+| Variable | Default in compose |
+|----------|--------------------|
+| `ConnectionStrings__Postgres` | Postgres on the Docker host, port `6110` (`host.docker.internal`) |
+| `RabbitMQ__Host` / `Port` / `Username` / `Password` | RabbitMQ on the Docker host, port `5672`, `guest` / `guest` |
 
-4. Or run the worker on the host (against published ports):
+The broker must already be running. If it is not reachable, the startup check retries and then exits with code `1`.
+
+The database schema (including `user_sync_status`) must already exist; this worker does not run migrations.
+
+Or run the worker on the host:
 
 ```bash
-# Worker
 export SteamApi__ApiKey=YOUR_KEY
 export ConnectionStrings__Postgres="Host=localhost;Port=6110;Database=achievhub;Username=postgres;Password=postgres;SSL Mode=Disable"
 export RabbitMQ__Host=localhost
@@ -84,7 +78,21 @@ cd src/SteamSync.Worker
 dotnet run
 ```
 
-Services: `postgres` + `api` (AchievHub), `rabbitmq` + `steam-sync-worker` (this repo), all on network `hub`.
+## Startup checks and queues
+
+The worker **never declares queues or exchanges**. It assumes the queues it consumes from and publishes to (see
+`SyncQueueNames`) are created by whoever provisions the broker.
+
+Before any consumer starts, the worker runs its startup checks in order:
+
+1. **Database**: opens a connection to `ConnectionStrings__Postgres`.
+2. **RabbitMQ**: opens a connection and channel to the broker.
+
+Each check logs `OK` or the specific error. A failing check is retried (`StartupHealthChecks__MaxAttempts`, default `5`,
+every `StartupHealthChecks__DelaySeconds`, default `5`). If it still fails, the worker logs the error and exits with code `1`.
+
+If a queue does not exist yet, its consumer logs `Queue ... does not exist yet; retrying in 5s` and starts consuming as
+soon as the queue appears. Note that publishing to a queue that does not exist silently drops the message.
 
 ## Configuration
 
@@ -99,6 +107,7 @@ Services: `postgres` + `api` (AchievHub), `rabbitmq` + `steam-sync-worker` (this
 | `SyncWorker__NightlyCron` | UTC cron for nightly fan-out (default `0 0 * * *`) |
 | `SyncWorker__MaxStoreEnrichPerLibrarySync` | Max Store API enrich calls per library sync (default `5`) |
 | `SyncWorker__MaxAttempts` | Sync attempt budgeting (default `5`) |
+| `StartupHealthChecks__MaxAttempts` / `DelaySeconds` / `TimeoutSeconds` | Startup check retries (defaults `5` / `5` / `10`) |
 
 ## Queue monitoring
 

@@ -65,7 +65,7 @@ public class SyncPipelineIntegrationTests : IAsyncLifetime
         var factory = new ConnectionFactory { Uri = new Uri(_rabbit.GetConnectionString()) };
         await using var connection = await factory.CreateConnectionAsync();
         await using var channel = await connection.CreateChannelAsync();
-        await RabbitMqTopology.DeclareAsync(channel);
+        await TestTopology.DeclareAsync(channel);
 
         var consumed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var consumer = new AsyncEventingBasicConsumer(channel);

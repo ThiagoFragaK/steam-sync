@@ -13,7 +13,6 @@ public abstract class UserAchievementsSyncConsumerBase : RetryingQueueConsumer<U
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISyncJobPublisher _publisher;
-    private readonly Func<IChannel, CancellationToken, Task> _declareTopology;
 
     protected UserAchievementsSyncConsumerBase(
         IRabbitMqConnectionFactory connectionFactory,
@@ -21,17 +20,12 @@ public abstract class UserAchievementsSyncConsumerBase : RetryingQueueConsumer<U
         ISyncJobPublisher publisher,
         IOptions<SyncWorkerOptions> options,
         ILogger logger,
-        string queueName,
-        Func<IChannel, CancellationToken, Task> declareTopology)
+        string queueName)
         : base(connectionFactory, options, logger, queueName, prefetchCount: 5)
     {
         _scopeFactory = scopeFactory;
         _publisher = publisher;
-        _declareTopology = declareTopology;
     }
-
-    protected override Task DeclareTopologyAsync(IChannel channel, CancellationToken cancellationToken) =>
-        _declareTopology(channel, cancellationToken);
 
     protected override bool IsValid(UserAchievementsSyncJob job) =>
         job.UserId > 0 && !string.IsNullOrWhiteSpace(job.SteamId) && job.AppId > 0;
@@ -85,8 +79,7 @@ public sealed class UserAchievementsSyncHighConsumer : UserAchievementsSyncConsu
             publisher,
             options,
             logger,
-            SyncQueueNames.UserAchievementsSyncHigh,
-            RabbitMqTopology.DeclareUserAchievementsSyncHighTopologyAsync)
+            SyncQueueNames.UserAchievementsSyncHigh)
     {
     }
 }
@@ -105,8 +98,7 @@ public sealed class UserAchievementsSyncLowConsumer : UserAchievementsSyncConsum
             publisher,
             options,
             logger,
-            SyncQueueNames.UserAchievementsSyncLow,
-            RabbitMqTopology.DeclareUserAchievementsSyncLowTopologyAsync)
+            SyncQueueNames.UserAchievementsSyncLow)
     {
     }
 }

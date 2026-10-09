@@ -5,11 +5,14 @@ using OpenTelemetry.Resources;
 using SteamSync.Worker.Application.Steam;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Infrastructure.Configuration;
+using SteamSync.Worker.Infrastructure.HealthChecks;
+using SteamSync.Worker.Infrastructure.HealthChecks.Interfaces;
 using SteamSync.Worker.Infrastructure.Messaging;
 using SteamSync.Worker.Infrastructure.Messaging.Interfaces;
 using SteamSync.Worker.Infrastructure.Metrics;
 using SteamSync.Worker.Infrastructure.Options;
 using SteamSync.Worker.Infrastructure.Persistence;
+using SteamSync.Worker.Infrastructure.Startup;
 using SteamSync.Worker.Infrastructure.Steam;
 using SteamSync.Worker.Workers;
 
@@ -23,6 +26,7 @@ public static class DependencyInjection
         services.Configure<SyncWorkerOptions>(configuration.GetSection(SyncWorkerOptions.SectionName));
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
         services.Configure<RateLimiterOptions>(configuration.GetSection(RateLimiterOptions.SectionName));
+        services.Configure<StartupHealthCheckOptions>(configuration.GetSection(StartupHealthCheckOptions.SectionName));
 
         var connectionString = configuration.GetConnectionString("Postgres")
             ?? configuration.GetConnectionString("DefaultConnection")
@@ -51,6 +55,13 @@ public static class DependencyInjection
 
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<ISyncJobPublisher, SyncJobPublisher>();
+
+        // Startup sequence. Health checks run in registration order: Database first, then RabbitMQ.
+        // No IStartupTask is registered: this worker never declares queues.
+        services.AddSingleton<IStartupHealthCheck, DatabaseHealthCheck>();
+        services.AddSingleton<IStartupHealthCheck, RabbitMqHealthCheck>();
+        services.AddSingleton<StartupOrchestrator>();
+
         services.AddHostedService<SteamSyncConsumer>();
         services.AddHostedService<FirstSyncConsumer>();
         services.AddHostedService<GamesListSyncConsumer>();

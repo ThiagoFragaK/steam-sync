@@ -25,9 +25,6 @@ public sealed class GamesListSyncConsumer : RetryingQueueConsumer<GamesListSyncJ
         _publisher = publisher;
     }
 
-    protected override Task DeclareTopologyAsync(IChannel channel, CancellationToken cancellationToken) =>
-        RabbitMqTopology.DeclareGamesListSyncTopologyAsync(channel, cancellationToken);
-
     protected override bool IsValid(GamesListSyncJob job) =>
         job.UserId > 0 && !string.IsNullOrWhiteSpace(job.SteamId);
 

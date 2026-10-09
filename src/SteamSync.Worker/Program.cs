@@ -1,6 +1,7 @@
 using Serilog;
 using SteamSync.Worker.Extensions;
 using SteamSync.Worker.Infrastructure.Options;
+using SteamSync.Worker.Infrastructure.Startup;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -26,6 +27,14 @@ try
     builder.Services.AddSteamSyncWorker(builder.Configuration);
 
     var host = builder.Build();
+
+    if (!await host.Services.GetRequiredService<StartupOrchestrator>().RunAsync())
+    {
+        Log.Fatal("Startup checks failed; shutting down.");
+        Environment.ExitCode = 1;
+        return;
+    }
+
     Log.Information("steam-sync worker starting");
     await host.RunAsync();
 }
