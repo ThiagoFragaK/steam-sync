@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using SteamSync.Worker.Infrastructure.Messaging.Interfaces;
 using SteamSync.Worker.Infrastructure.Options;
 
@@ -32,8 +33,6 @@ public abstract class RetryingQueueConsumer<TJob> : BackgroundService
         _queueName = queueName;
         _prefetchCount = prefetchCount;
     }
-
-    protected abstract Task DeclareTopologyAsync(IChannel channel, CancellationToken cancellationToken);
 
     protected abstract bool IsValid(TJob job);
 
@@ -67,7 +66,14 @@ public abstract class RetryingQueueConsumer<TJob> : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "{Queue} RabbitMQ consumer loop faulted; reconnecting in 5s", _queueName);
+                if (ex is OperationInterruptedException { ShutdownReason.ReplyCode: 404 })
+                {
+                    _logger.LogWarning("Queue {Queue} does not exist yet; retrying in 5s", _queueName);
+                }
+                else
+                {
+                    _logger.LogError(ex, "{Queue} RabbitMQ consumer loop faulted; reconnecting in 5s", _queueName);
+                }
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
@@ -84,7 +90,6 @@ public abstract class RetryingQueueConsumer<TJob> : BackgroundService
     {
         await using var connection = await _connectionFactory.CreateConnectionAsync(stoppingToken);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: stoppingToken);
-        await DeclareTopologyAsync(channel, stoppingToken);
         await channel.BasicQosAsync(0, _prefetchCount, false, stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);

@@ -139,7 +139,6 @@ public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
 
             _connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
             _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
-            await RabbitMqTopology.DeclareAsync(_channel, cancellationToken);
             _logger.LogDebug("RabbitMQ publisher channel ready");
             return _channel;
         }
