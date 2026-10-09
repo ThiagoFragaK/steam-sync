@@ -25,9 +25,6 @@ public sealed class SyncLibraryConsumer : RetryingQueueConsumer<SyncLibraryJob>
         _publisher = publisher;
     }
 
-    protected override Task DeclareTopologyAsync(IChannel channel, CancellationToken cancellationToken) =>
-        RabbitMqTopology.DeclareSyncLibraryTopologyAsync(channel, cancellationToken);
-
     protected override bool IsValid(SyncLibraryJob job) =>
         job.UserId > 0 && !string.IsNullOrWhiteSpace(job.SteamId);
 
