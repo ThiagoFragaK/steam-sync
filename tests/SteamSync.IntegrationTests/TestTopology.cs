@@ -1,9 +1,13 @@
 using RabbitMQ.Client;
 using SteamSync.Shared.Messages;
 
-namespace SteamSync.Worker.Infrastructure.Messaging;
+namespace SteamSync.IntegrationTests;
 
-public static class RabbitMqTopology
+/// <summary>
+/// Test-only queue topology so the integration test has queues to consume from.
+/// The worker itself never declares queues.
+/// </summary>
+public static class TestTopology
 {
     public static async Task DeclareAsync(IChannel channel, CancellationToken cancellationToken = default)
     {

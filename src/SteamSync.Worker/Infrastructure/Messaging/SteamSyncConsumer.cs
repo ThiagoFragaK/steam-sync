@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Application.Steam;
 using SteamSync.Worker.Application.Steam.Interfaces;
@@ -50,7 +51,14 @@ public sealed class SteamSyncConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "RabbitMQ consumer loop faulted; reconnecting in 5s");
+                if (ex is OperationInterruptedException { ShutdownReason.ReplyCode: 404 })
+                {
+                    _logger.LogWarning("Queue {Queue} does not exist yet; retrying in 5s", SyncQueueNames.Jobs);
+                }
+                else
+                {
+                    _logger.LogError(ex, "RabbitMQ consumer loop faulted; reconnecting in 5s");
+                }
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
@@ -67,7 +75,6 @@ public sealed class SteamSyncConsumer : BackgroundService
     {
         await using var connection = await _connectionFactory.CreateConnectionAsync(stoppingToken);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: stoppingToken);
-        await RabbitMqTopology.DeclareAsync(channel, stoppingToken);
         await channel.BasicQosAsync(0, PrefetchCount, false, stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);
