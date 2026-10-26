@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddHostedService<UserAchievementsSyncLowConsumer>();
         services.AddHostedService<SyncLibraryConsumer>();
         services.AddHostedService<GlobalAchievementUpdateConsumer>();
+        services.AddHostedService<GlobalPercentBackfillWorker>();
         services.AddHostedService<DailyUpdateWorker>();
 
         services.AddOpenTelemetry()
