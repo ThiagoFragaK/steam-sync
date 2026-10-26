@@ -13,6 +13,9 @@ public class SyncWorkerOptions
 
     public int SchemaTtlDays { get; set; } = 14;
 
+    /// <summary>Skip another Steam global-percent call for an app synced within this many hours.</summary>
+    public int GlobalPercentTtlHours { get; set; } = 24;
+
     public string NightlyCron { get; set; } = "0 0 * * *";
 
     public int MaxAttempts { get; set; } = 5;

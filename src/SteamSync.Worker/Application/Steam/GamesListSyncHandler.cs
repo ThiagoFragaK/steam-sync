@@ -35,10 +35,18 @@ public class GamesListSyncHandler
                         : job.Priority
                 },
                 cancellationToken);
+
+            await _publisher.PublishGlobalAchievementUpdateAsync(
+                new GlobalAchievementUpdateJob
+                {
+                    JobId = Guid.NewGuid(),
+                    AppId = appId
+                },
+                cancellationToken);
         }
 
         _logger.LogInformation(
-            "GamesListSync for user {UserId}: fanned out {Count} UserAchievementsSync jobs",
+            "GamesListSync for user {UserId}: fanned out {Count} achievement and global-percent jobs",
             job.UserId,
             appIds.Length);
     }
