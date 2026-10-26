@@ -1,5 +1,4 @@
 using SteamSync.Worker.Domain.Entities;
-using SteamSync.Worker.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -9,10 +8,13 @@ public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
 {
     public void Configure(EntityTypeBuilder<Achievement> builder)
     {
-        builder.ToTable("achievements");
+        builder.ToTable("achievements", t => t.HasCheckConstraint(
+            "CK_achievements_ApiName_not_empty",
+            "length(btrim(\"ApiName\")) > 0"));
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.ApiName)
+            .IsRequired()
             .HasMaxLength(200);
 
         builder.Property(e => e.Name)
@@ -24,17 +26,16 @@ public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
             .HasMaxLength(1000);
 
         builder.Property(e => e.ImageUrlLock)
-            .HasMaxLength(500);
+            .HasMaxLength(40);
 
         builder.Property(e => e.ImageUrlUnlock)
-            .HasMaxLength(500);
+            .HasMaxLength(40);
 
         builder.Property(e => e.GlobalPercentage)
             .HasPrecision(5, 2);
 
         builder.HasIndex(e => new { e.GameId, e.ApiName })
-            .IsUnique()
-            .HasFilter("\"ApiName\" IS NOT NULL AND \"ApiName\" <> ''");
+            .IsUnique();
 
         builder.HasMany(e => e.UsersAchievements)
             .WithOne(ua => ua.Achievement)
