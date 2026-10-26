@@ -17,6 +17,7 @@ public static class TestTopology
         await DeclareUserAchievementsSyncHighTopologyAsync(channel, cancellationToken);
         await DeclareUserAchievementsSyncLowTopologyAsync(channel, cancellationToken);
         await DeclareSyncLibraryTopologyAsync(channel, cancellationToken);
+        await DeclareGlobalAchievementUpdateTopologyAsync(channel, cancellationToken);
     }
 
     public static async Task DeclareJobsTopologyAsync(IChannel channel, CancellationToken cancellationToken = default) =>
@@ -69,6 +70,16 @@ public static class TestTopology
             SyncQueueNames.SyncLibrary,
             SyncQueueNames.SyncLibraryDeadLetterExchange,
             SyncQueueNames.SyncLibraryDeadLetterQueue,
+            cancellationToken);
+
+    public static async Task DeclareGlobalAchievementUpdateTopologyAsync(
+        IChannel channel,
+        CancellationToken cancellationToken = default) =>
+        await DeclareQueuePairAsync(
+            channel,
+            SyncQueueNames.GlobalAchievementUpdate,
+            SyncQueueNames.GlobalAchievementUpdateDeadLetterExchange,
+            SyncQueueNames.GlobalAchievementUpdateDeadLetterQueue,
             cancellationToken);
 
     private static async Task DeclareQueuePairAsync(

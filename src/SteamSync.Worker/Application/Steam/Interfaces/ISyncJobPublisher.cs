@@ -23,4 +23,8 @@ public interface ISyncJobPublisher
     Task PublishSyncLibraryAsync(SyncLibraryJob job, CancellationToken cancellationToken = default);
 
     Task PublishSyncLibraryDeadLetterAsync(SyncLibraryJob job, CancellationToken cancellationToken = default);
+
+    Task PublishGlobalAchievementUpdateAsync(GlobalAchievementUpdateJob job, CancellationToken cancellationToken = default);
+
+    Task PublishGlobalAchievementUpdateDeadLetterAsync(GlobalAchievementUpdateJob job, CancellationToken cancellationToken = default);
 }

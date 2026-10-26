@@ -37,6 +37,8 @@ public class GameConfiguration : IEntityTypeConfiguration<Game>
 
         builder.Property(e => e.SchemaSyncedAt);
 
+        builder.Property(e => e.GlobalPercentSyncedAt);
+
         builder.HasIndex(e => e.GameSteamId)
             .IsUnique();
 
