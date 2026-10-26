@@ -8,7 +8,9 @@ public class GameConfiguration : IEntityTypeConfiguration<Game>
 {
     public void Configure(EntityTypeBuilder<Game> builder)
     {
-        builder.ToTable("games");
+        builder.ToTable("games", t => t.HasCheckConstraint(
+            "CK_games_GameSteamId_not_empty",
+            "length(btrim(\"GameSteamId\")) > 0"));
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Name)
