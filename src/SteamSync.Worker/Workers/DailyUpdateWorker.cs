@@ -87,7 +87,7 @@ public class DailyUpdateWorker : BackgroundService
                     UserId = user.Id,
                     SteamId = user.SteamId!,
                     Priority = "low",
-                    IncludeCrawl = true
+                    IncludeCrawl = false
                 }
             }, cancellationToken);
         }

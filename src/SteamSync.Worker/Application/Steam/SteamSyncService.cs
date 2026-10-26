@@ -617,6 +617,31 @@ public class SteamSyncService : ISteamSyncService
         return ParseAppIds(steamIds.Where(id => id is not null).Select(id => id!)).ToList();
     }
 
+    public async Task<IReadOnlyList<int>> GetRecentAchievementSyncAppIdsAsync(
+        int userId,
+        string steamId,
+        CancellationToken cancellationToken = default)
+    {
+        var recentAppIds = await GetRecentTwoWeeksAppIdsAsync(steamId, cancellationToken);
+        if (recentAppIds.Count == 0)
+        {
+            return [];
+        }
+
+        var recentSteamIds = recentAppIds.Select(id => id.ToString()).ToList();
+        var eligibleSteamIds = await _db.UsersGames
+            .AsNoTracking()
+            .Where(ug => ug.UserId == userId
+                && ug.Game.GameSteamId != null
+                && recentSteamIds.Contains(ug.Game.GameSteamId)
+                && ug.Game.HasCommunityVisibleStats == true
+                && !ug.AchievementSyncUnavailable)
+            .Select(ug => ug.Game.GameSteamId!)
+            .ToListAsync(cancellationToken);
+
+        return ParseAppIds(eligibleSteamIds).Distinct().ToList();
+    }
+
     private async Task<List<int>> GetRecentTwoWeeksAppIdsAsync(string steamId, CancellationToken cancellationToken)
     {
         var recent = await _achievementFetcher.GetRecentlyPlayedGamesAsync(steamId, cancellationToken);
