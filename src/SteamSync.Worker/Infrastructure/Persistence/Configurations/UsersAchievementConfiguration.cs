@@ -1,5 +1,4 @@
 using SteamSync.Worker.Domain.Entities;
-using SteamSync.Worker.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -16,5 +15,8 @@ public class UsersAchievementConfiguration : IEntityTypeConfiguration<UsersAchie
             .HasColumnName("unlock_date");
 
         builder.HasIndex(e => new { e.UserId, e.AchievementId }).IsUnique();
+        builder.HasIndex(e => new { e.UserId, e.GameId });
+        builder.HasIndex(e => new { e.UserId, e.UnlockDate })
+            .HasFilter("unlock_date IS NOT NULL");
     }
 }

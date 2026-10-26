@@ -10,7 +10,7 @@ public class Game : IEntity
     public string? ImageUrl { get; set; }
     /// <summary>Store header image absolute URL from Steam Store appdetails.</summary>
     public string? HeaderImageUrl { get; set; }
-    public string? GameSteamId { get; set; }
+    public string GameSteamId { get; set; } = string.Empty;
     public string? Developers { get; set; }
     public string? Publishers { get; set; }
     public bool? HasCommunityVisibleStats { get; set; }
