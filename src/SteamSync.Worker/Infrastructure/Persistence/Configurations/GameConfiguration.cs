@@ -1,5 +1,4 @@
 using SteamSync.Worker.Domain.Entities;
-using SteamSync.Worker.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -17,12 +16,13 @@ public class GameConfiguration : IEntityTypeConfiguration<Game>
             .HasMaxLength(200);
 
         builder.Property(e => e.ImageUrl)
-            .HasMaxLength(500);
+            .HasMaxLength(40);
 
         builder.Property(e => e.HeaderImageUrl)
-            .HasMaxLength(500);
+            .HasMaxLength(200);
 
         builder.Property(e => e.GameSteamId)
+            .IsRequired()
             .HasMaxLength(100);
 
         builder.Property(e => e.Developers)
@@ -36,8 +36,7 @@ public class GameConfiguration : IEntityTypeConfiguration<Game>
         builder.Property(e => e.SchemaSyncedAt);
 
         builder.HasIndex(e => e.GameSteamId)
-            .IsUnique()
-            .HasFilter("\"GameSteamId\" IS NOT NULL");
+            .IsUnique();
 
         builder.HasMany(e => e.Achievements)
             .WithOne(a => a.Game)

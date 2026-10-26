@@ -85,6 +85,8 @@ public class UserSyncMessageHandler
                         throw new InvalidOperationException($"Unknown JobType '{job.JobType}'");
                 }
 
+                await _steamSyncService.RecomputeUserAchievementStatsAsync(userId, cancellationToken);
+
                 var synced = await _db.UsersGames.AsNoTracking()
                     .CountAsync(
                         ug => ug.UserId == userId
