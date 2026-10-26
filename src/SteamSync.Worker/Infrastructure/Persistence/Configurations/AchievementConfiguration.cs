@@ -8,7 +8,9 @@ public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
 {
     public void Configure(EntityTypeBuilder<Achievement> builder)
     {
-        builder.ToTable("achievements");
+        builder.ToTable("achievements", t => t.HasCheckConstraint(
+            "CK_achievements_ApiName_not_empty",
+            "length(btrim(\"ApiName\")) > 0"));
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.ApiName)
