@@ -6,7 +6,7 @@ public class Achievement : IEntity
 {
     public int Id { get; set; }
     public int GameId { get; set; }
-    public string? ApiName { get; set; }
+    public string ApiName { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? ImageUrlLock { get; set; }

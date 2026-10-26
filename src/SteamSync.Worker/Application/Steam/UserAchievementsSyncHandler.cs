@@ -160,6 +160,7 @@ public class UserAchievementsSyncHandler
                 return;
             }
 
+            await _steamSyncService.RecomputeUserAchievementStatsAsync(userId, cancellationToken);
             await _syncRepository.ActivateUserAsync(userId, cancellationToken);
             await _publisher.PublishSyncLibraryAsync(
                 new SyncLibraryJob
@@ -189,6 +190,7 @@ public class UserAchievementsSyncHandler
                 return;
             }
 
+            await _steamSyncService.RecomputeUserAchievementStatsAsync(userId, cancellationToken);
             await _syncRepository.ActivateUserAsync(userId, cancellationToken);
             await _syncRepository.MarkCompleteAsync(
                 userId,
