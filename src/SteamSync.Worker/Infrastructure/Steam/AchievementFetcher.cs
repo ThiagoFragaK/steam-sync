@@ -106,11 +106,32 @@ public class AchievementFetcher : IAchievementFetcher
         }
     }
 
-    public async Task<IReadOnlyList<OwnedGame>> GetOwnedGamesAsync(string steamId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<OwnedGame>> GetOwnedGamesAsync(
+        string steamId,
+        IReadOnlyCollection<int>? appIdsFilter = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var url = $"/IPlayerService/GetOwnedGames/v0001/?key={_apiKey}&steamid={steamId}&include_appinfo=true&include_played_free_games=true&format=json";
+            string url;
+            if (appIdsFilter is { Count: > 0 })
+            {
+                var inputJson = JsonSerializer.Serialize(new
+                {
+                    steamid = steamId,
+                    include_appinfo = true,
+                    include_played_free_games = true,
+                    appids_filter = appIdsFilter.Where(id => id > 0).Distinct().ToArray()
+                });
+                url =
+                    $"/IPlayerService/GetOwnedGames/v0001/?key={_apiKey}&format=json&input_json={Uri.EscapeDataString(inputJson)}";
+            }
+            else
+            {
+                url =
+                    $"/IPlayerService/GetOwnedGames/v0001/?key={_apiKey}&steamid={steamId}&include_appinfo=true&include_played_free_games=true&format=json";
+            }
+
             using var document = await GetJsonAsync(url, cancellationToken);
             if (document is null ||
                 !TryGetProperty(document.RootElement, "response", out var response) ||
