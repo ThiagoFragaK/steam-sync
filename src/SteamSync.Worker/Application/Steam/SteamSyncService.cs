@@ -54,7 +54,7 @@ public class SteamSyncService : ISteamSyncService
 
         if (scope == LibrarySyncScope.Full)
         {
-            var ownedGames = await _achievementFetcher.GetOwnedGamesAsync(steamId, cancellationToken);
+            var ownedGames = await _achievementFetcher.GetOwnedGamesAsync(steamId, cancellationToken: cancellationToken);
             foreach (var owned in ownedGames)
             {
                 if (owned.AppId <= 0)
@@ -99,6 +99,32 @@ public class SteamSyncService : ISteamSyncService
                     recent.PlaytimeForeverMinutes,
                     null,
                     null);
+            }
+        }
+
+        if (scope == LibrarySyncScope.Recent && byAppId.Count > 0)
+        {
+            var ownedRecent = await _achievementFetcher.GetOwnedGamesAsync(
+                steamId,
+                byAppId.Keys.ToList(),
+                cancellationToken);
+            foreach (var owned in ownedRecent)
+            {
+                if (!byAppId.TryGetValue(owned.AppId, out var existing))
+                {
+                    continue;
+                }
+
+                byAppId[owned.AppId] = existing with
+                {
+                    Name = string.IsNullOrWhiteSpace(existing.Name) ? owned.Name : existing.Name,
+                    ImageUrl = string.IsNullOrWhiteSpace(existing.ImageUrl) ? owned.ImgIconUrl : existing.ImageUrl,
+                    PlaytimeMinutes = owned.PlaytimeForeverMinutes > 0
+                        ? owned.PlaytimeForeverMinutes
+                        : existing.PlaytimeMinutes,
+                    LastPlayedUnix = owned.LastPlayedUnix ?? existing.LastPlayedUnix,
+                    HasCommunityVisibleStats = owned.HasCommunityVisibleStats
+                };
             }
         }
 
