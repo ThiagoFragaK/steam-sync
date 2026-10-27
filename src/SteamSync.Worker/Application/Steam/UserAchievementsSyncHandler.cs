@@ -136,6 +136,18 @@ public class UserAchievementsSyncHandler
 
     private async Task AfterGameHandledAsync(int userId, string steamId, CancellationToken cancellationToken)
     {
+        var status = await _syncRepository.GetAsync(userId, cancellationToken);
+        if (status is null
+            || (status.PipelineStage is not PipelineStage.RecentAchievements
+                and not PipelineStage.FullAchievements))
+        {
+            _logger.LogDebug(
+                "Skipping wave progress for user {UserId}: stage {Stage}",
+                userId,
+                status?.PipelineStage);
+            return;
+        }
+
         var progress = await _syncRepository.IncrementWaveProgressAsync(userId, cancellationToken);
         if (progress is null)
         {
