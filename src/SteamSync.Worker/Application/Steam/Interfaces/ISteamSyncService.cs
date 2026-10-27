@@ -41,4 +41,12 @@ public interface ISteamSyncService
         int skip,
         int take,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Recent two-week app IDs for the user that have community stats and are not marked unavailable.
+    /// </summary>
+    Task<IReadOnlyList<int>> GetRecentAchievementSyncAppIdsAsync(
+        int userId,
+        string steamId,
+        CancellationToken cancellationToken = default);
 }
