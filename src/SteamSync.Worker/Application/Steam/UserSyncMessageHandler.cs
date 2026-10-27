@@ -15,6 +15,7 @@ public class UserSyncMessageHandler
 {
     private readonly ISteamSyncService _steamSyncService;
     private readonly ISyncRepository _syncRepository;
+    private readonly ISyncJobPublisher _publisher;
     private readonly WorkerDbContext _db;
     private readonly SteamApiThrottle _steamGate;
     private readonly SyncWorkerOptions _options;
@@ -23,6 +24,7 @@ public class UserSyncMessageHandler
     public UserSyncMessageHandler(
         ISteamSyncService steamSyncService,
         ISyncRepository syncRepository,
+        ISyncJobPublisher publisher,
         WorkerDbContext db,
         SteamApiThrottle steamGate,
         IOptions<SyncWorkerOptions> options,
@@ -30,6 +32,7 @@ public class UserSyncMessageHandler
     {
         _steamSyncService = steamSyncService;
         _syncRepository = syncRepository;
+        _publisher = publisher;
         _db = db;
         _steamGate = steamGate;
         _options = options.Value;
@@ -69,7 +72,7 @@ public class UserSyncMessageHandler
                         await RunFullLibraryResyncAsync(userId, steamId, cancellationToken);
                         break;
                     case SyncJobTypes.RecentActivityOnly:
-                        await RunRecentActivityAsync(userId, steamId, payload.IncludeCrawl, cancellationToken);
+                        await RunRecentActivityAsync(userId, steamId, cancellationToken);
                         break;
                     case SyncJobTypes.UserSync:
                         if (payload.AppId is int appId)
@@ -78,7 +81,7 @@ public class UserSyncMessageHandler
                         }
                         else
                         {
-                            await RunRecentActivityAsync(userId, steamId, payload.IncludeCrawl, cancellationToken);
+                            await RunRecentActivityAsync(userId, steamId, cancellationToken);
                         }
                         break;
                     default:
@@ -144,7 +147,7 @@ public class UserSyncMessageHandler
         await RunCrawlToCompletionAsync(userId, steamId, ct);
     }
 
-    private async Task RunRecentActivityAsync(int userId, string steamId, bool includeCrawl, CancellationToken ct)
+    private async Task RunRecentActivityAsync(int userId, string steamId, CancellationToken ct)
     {
         await _steamSyncService.SyncLibraryAsync(
             userId,
@@ -153,12 +156,25 @@ public class UserSyncMessageHandler
             _options.MaxStoreEnrichPerLibrarySync,
             ct);
 
-        await RunPriorityAsync(userId, steamId, ct);
-
-        if (includeCrawl)
+        var appIds = await _steamSyncService.GetRecentAchievementSyncAppIdsAsync(userId, steamId, ct);
+        foreach (var appId in appIds)
         {
-            await RunCrawlToCompletionAsync(userId, steamId, ct);
+            await _publisher.PublishUserAchievementsSyncAsync(
+                new UserAchievementsSyncJob
+                {
+                    JobId = Guid.NewGuid(),
+                    UserId = userId,
+                    SteamId = steamId,
+                    AppId = appId,
+                    Priority = SyncJobPriorities.Low
+                },
+                ct);
         }
+
+        _logger.LogInformation(
+            "Recent activity for user {UserId}: fanned out {Count} UserAchievementsSync low jobs",
+            userId,
+            appIds.Count);
     }
 
     private async Task RunPriorityAsync(int userId, string steamId, CancellationToken ct)
