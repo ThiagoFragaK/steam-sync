@@ -169,10 +169,18 @@ public class UserSyncMessageHandler
                     Priority = SyncJobPriorities.Low
                 },
                 ct);
+
+            await _publisher.PublishGlobalAchievementUpdateAsync(
+                new GlobalAchievementUpdateJob
+                {
+                    JobId = Guid.NewGuid(),
+                    AppId = appId
+                },
+                ct);
         }
 
         _logger.LogInformation(
-            "Recent activity for user {UserId}: fanned out {Count} UserAchievementsSync low jobs",
+            "Recent activity for user {UserId}: fanned out {Count} achievement and global-percent jobs",
             userId,
             appIds.Count);
     }
