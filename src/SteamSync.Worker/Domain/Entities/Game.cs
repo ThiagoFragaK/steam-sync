@@ -15,6 +15,7 @@ public class Game : IEntity
     public string? Publishers { get; set; }
     public bool? HasCommunityVisibleStats { get; set; }
     public DateTimeOffset? SchemaSyncedAt { get; set; }
+    public DateTimeOffset? GlobalPercentSyncedAt { get; set; }
 
     public ICollection<Achievement> Achievements { get; set; } = [];
     public ICollection<UsersGame> UsersGames { get; set; } = [];

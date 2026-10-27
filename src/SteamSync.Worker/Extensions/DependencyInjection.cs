@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<GamesListSyncHandler>();
         services.AddScoped<UserAchievementsSyncHandler>();
         services.AddScoped<SyncLibraryHandler>();
+        services.AddScoped<GlobalAchievementUpdateHandler>();
 
         services.AddHttpClient<IAchievementFetcher, AchievementFetcher>()
             .AddStandardResilienceHandler(options =>
@@ -68,6 +69,8 @@ public static class DependencyInjection
         services.AddHostedService<UserAchievementsSyncHighConsumer>();
         services.AddHostedService<UserAchievementsSyncLowConsumer>();
         services.AddHostedService<SyncLibraryConsumer>();
+        services.AddHostedService<GlobalAchievementUpdateConsumer>();
+        services.AddHostedService<GlobalPercentBackfillWorker>();
         services.AddHostedService<DailyUpdateWorker>();
 
         services.AddOpenTelemetry()

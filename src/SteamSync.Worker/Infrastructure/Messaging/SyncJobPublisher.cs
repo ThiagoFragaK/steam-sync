@@ -87,6 +87,18 @@ public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
             job,
             cancellationToken);
 
+    public Task PublishGlobalAchievementUpdateAsync(GlobalAchievementUpdateJob job, CancellationToken cancellationToken = default) =>
+        PublishToQueueAsync(SyncQueueNames.GlobalAchievementUpdate, job, cancellationToken);
+
+    public Task PublishGlobalAchievementUpdateDeadLetterAsync(
+        GlobalAchievementUpdateJob job,
+        CancellationToken cancellationToken = default) =>
+        PublishToExchangeAsync(
+            SyncQueueNames.GlobalAchievementUpdateDeadLetterExchange,
+            SyncQueueNames.GlobalAchievementUpdateDeadLetterQueue,
+            job,
+            cancellationToken);
+
     private async Task PublishToQueueAsync<T>(string routingKey, T job, CancellationToken cancellationToken)
     {
         var channel = await EnsureChannelAsync(cancellationToken);
