@@ -86,6 +86,18 @@ public class UserAchievementsSyncJob
     public int RetryCount { get; set; }
 }
 
+/// <summary>Refresh public global achievement percentages for one app.</summary>
+public class GlobalAchievementUpdateJob
+{
+    public Guid JobId { get; set; } = Guid.NewGuid();
+
+    public int AppId { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public int RetryCount { get; set; }
+}
+
 /// <summary>Full owned-library upsert, then fan-out remaining achievement syncs.</summary>
 public class SyncLibraryJob
 {
@@ -117,6 +129,7 @@ public static class SyncJobTypes
     public const string FirstSync = "first_sync";
     public const string GamesListSync = "games_list_sync";
     public const string UserAchievementsSync = "user_achievements_sync";
+    public const string GlobalAchievementUpdate = "global_achievement_update";
     public const string SyncLibrary = "sync_library";
 }
 
@@ -145,4 +158,8 @@ public static class SyncQueueNames
     public const string SyncLibrary = "sync_library";
     public const string SyncLibraryDeadLetterExchange = "sync_library_dlx";
     public const string SyncLibraryDeadLetterQueue = "sync_library_dlq";
+
+    public const string GlobalAchievementUpdate = "global_achievement_update";
+    public const string GlobalAchievementUpdateDeadLetterExchange = "global_achievement_update_dlx";
+    public const string GlobalAchievementUpdateDeadLetterQueue = "global_achievement_update_dlq";
 }

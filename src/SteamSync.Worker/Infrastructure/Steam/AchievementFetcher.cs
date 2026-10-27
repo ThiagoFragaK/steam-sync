@@ -235,6 +235,51 @@ public class AchievementFetcher : IAchievementFetcher
         }
     }
 
+    public async Task<IReadOnlyList<GlobalAchievementPercentage>?> GetGlobalAchievementPercentagesAsync(
+        int appId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?gameid={appId}&format=json";
+            using var document = await GetJsonAsync(url, cancellationToken, requireSuccessStatusCode: false);
+            if (document is null)
+            {
+                return null;
+            }
+
+            if (!TryGetProperty(document.RootElement, "achievementpercentages", out var percentages) ||
+                !TryGetProperty(percentages, "achievements", out var achievementArray) ||
+                achievementArray.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var results = new List<GlobalAchievementPercentage>();
+            foreach (var achievement in achievementArray.EnumerateArray())
+            {
+                var percent = GetDecimal(achievement, "percent");
+                if (percent is null)
+                {
+                    continue;
+                }
+
+                results.Add(new GlobalAchievementPercentage
+                {
+                    Name = GetString(achievement, "name"),
+                    Percent = percent.Value
+                });
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching global achievement percentages for App ID {AppId}", appId);
+            return null;
+        }
+    }
+
     public async Task<StoreGame?> GetStoreGameDetailsAsync(int appId, CancellationToken cancellationToken = default)
     {
         try
@@ -341,6 +386,30 @@ public class AchievementFetcher : IAchievementFetcher
             JsonValueKind.False => 0,
             _ => null
         };
+    }
+
+    private static decimal? GetDecimal(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value) || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Number when value.TryGetDecimal(out var number):
+                return number;
+            case JsonValueKind.Number:
+                return (decimal)value.GetDouble();
+            case JsonValueKind.String when decimal.TryParse(
+                value.GetString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsed):
+                return parsed;
+            default:
+                return null;
+        }
     }
 
     private static long? GetLong(JsonElement element, string name)
