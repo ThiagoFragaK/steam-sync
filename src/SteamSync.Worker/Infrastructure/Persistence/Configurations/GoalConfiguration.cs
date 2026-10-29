@@ -1,5 +1,5 @@
 using SteamSync.Worker.Domain.Entities;
-using SteamSync.Worker.Domain.Interfaces;
+using SteamSync.Worker.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -17,5 +17,21 @@ public class GoalConfiguration : IEntityTypeConfiguration<Goal>
 
         builder.Property(e => e.AchievementsMissing)
             .HasDefaultValue(0);
+
+        builder.Property(e => e.Status)
+            .HasConversion<int>()
+            .HasDefaultValue(GoalStatus.Active);
+
+        builder.Property(e => e.CreatedAt)
+            .HasDefaultValueSql("NOW()");
+
+        builder.HasIndex(e => new { e.UserId, e.GameId })
+            .IsUnique()
+            .HasFilter($"\"Status\" = {(int)GoalStatus.Active}");
+
+        builder.HasMany(e => e.GoalAchievements)
+            .WithOne(ga => ga.Goal)
+            .HasForeignKey(ga => ga.GoalId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

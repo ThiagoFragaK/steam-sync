@@ -1,8 +1,10 @@
 using SteamSync.Worker.Infrastructure.Persistence;
 using SteamSync.Worker.Domain.Entities;
+using SteamSync.Worker.Domain.Enums;
 using SteamSync.Worker.Domain.Interfaces;
 using SteamSync.Worker.Infrastructure.Options;
 using SteamSync.Worker.Application.Common;
+using SteamSync.Worker.Application.Goals.Interfaces;
 using SteamSync.Worker.Application.Steam;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Infrastructure.Steam;
@@ -16,6 +18,7 @@ public class SteamSyncService : ISteamSyncService
 {
     private readonly WorkerDbContext _db;
     private readonly IAchievementFetcher _achievementFetcher;
+    private readonly IGoalRefreshService _goals;
     private readonly IMemoryCache _cache;
     private readonly SyncWorkerOptions _options;
     private readonly ILogger<SteamSyncService> _logger;
@@ -23,12 +26,14 @@ public class SteamSyncService : ISteamSyncService
     public SteamSyncService(
         WorkerDbContext db,
         IAchievementFetcher achievementFetcher,
+        IGoalRefreshService goals,
         IMemoryCache cache,
         IOptions<SyncWorkerOptions> options,
         ILogger<SteamSyncService> logger)
     {
         _db = db;
         _achievementFetcher = achievementFetcher;
+        _goals = goals;
         _cache = cache;
         _options = options.Value;
         _logger = logger;
@@ -471,6 +476,7 @@ public class SteamSyncService : ISteamSyncService
         usersGame.AchievementSyncUnavailable = false;
 
         await _db.SaveChangesAsync(cancellationToken);
+        await _goals.RefreshForGameAsync(userId, game.Id, cancellationToken);
 
         _logger.LogInformation(
             "Synced achievements for user {UserId} app {AppId}: {Unlocked}/{Total}",
@@ -566,7 +572,7 @@ public class SteamSyncService : ISteamSyncService
 
         var goalAppIds = await _db.Goals
             .AsNoTracking()
-            .Where(g => g.UserId == userId)
+            .Where(g => g.UserId == userId && g.Status == GoalStatus.Active)
             .Select(g => g.Game.GameSteamId)
             .ToListAsync(cancellationToken);
         AddRange(ParseAppIds(goalAppIds));
