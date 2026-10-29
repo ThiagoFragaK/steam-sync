@@ -14,6 +14,7 @@ public class WorkerDbContext : DbContext
     public DbSet<Game> Games => Set<Game>();
     public DbSet<Achievement> Achievements => Set<Achievement>();
     public DbSet<Goal> Goals => Set<Goal>();
+    public DbSet<GoalAchievement> GoalAchievements => Set<GoalAchievement>();
     public DbSet<UsersGame> UsersGames => Set<UsersGame>();
     public DbSet<UsersAchievement> UsersAchievements => Set<UsersAchievement>();
     public DbSet<UserSyncStatus> UserSyncStatuses => Set<UserSyncStatus>();
