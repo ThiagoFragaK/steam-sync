@@ -74,6 +74,12 @@ public class GoalRefreshService : IGoalRefreshService
         {
             goal.Status = GoalStatus.Completed;
             goal.CompletedAt = DateTimeOffset.UtcNow;
+
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == goal.UserId, cancellationToken);
+            if (user is not null)
+            {
+                user.ShowGoals = true;
+            }
         }
     }
 
