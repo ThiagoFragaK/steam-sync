@@ -63,6 +63,14 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasDefaultValue(true);
 
+        builder.Property(e => e.ShowGoals)
+            .HasColumnName("show_goals")
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(e => e.GoalsAcknowledgedAt)
+            .HasColumnName("goals_acknowledged_at");
+
         builder.HasIndex(e => e.Email).IsUnique();
         builder.HasIndex(e => e.SteamId)
             .IsUnique()

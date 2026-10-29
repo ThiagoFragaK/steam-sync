@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Http.Resilience;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using SteamSync.Worker.Application.Goals;
+using SteamSync.Worker.Application.Goals.Interfaces;
 using SteamSync.Worker.Application.Steam;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Infrastructure.Configuration;
@@ -36,6 +38,7 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddSingleton<SteamApiThrottle>();
         services.AddScoped<ISteamSyncService, SteamSyncService>();
+        services.AddScoped<IGoalRefreshService, GoalRefreshService>();
         services.AddScoped<ISyncRepository, SyncRepository>();
         services.AddScoped<UserSyncMessageHandler>();
         services.AddScoped<FirstSyncHandler>();

@@ -26,6 +26,8 @@ public class User : IEntity
     public decimal AchievementSyncCoverage { get; set; }
     /// <summary>False when Steam profile/game details are not public enough for Web API sync.</summary>
     public bool SteamLibraryPublic { get; set; } = true;
+    public bool ShowGoals { get; set; }
+    public DateTimeOffset? GoalsAcknowledgedAt { get; set; }
 
     public ICollection<UsersGame> UsersGames { get; set; } = [];
     public ICollection<UsersAchievement> UsersAchievements { get; set; } = [];
