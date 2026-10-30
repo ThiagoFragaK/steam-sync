@@ -54,6 +54,8 @@ public class SteamSyncService : ISteamSyncService
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
             ?? throw new InvalidOperationException($"User {userId} was not found.");
 
+        EnsureSteamIdMatchesUser(user, steamId);
+
         var recentGames = await _achievementFetcher.GetRecentlyPlayedGamesAsync(steamId, cancellationToken);
         var byAppId = new Dictionary<int, SyncGameInput>();
 
@@ -764,6 +766,16 @@ public class SteamSyncService : ISteamSyncService
         }
 
         return result;
+    }
+
+    internal static void EnsureSteamIdMatchesUser(User user, string steamId)
+    {
+        if (string.IsNullOrWhiteSpace(user.SteamId)
+            || !string.Equals(user.SteamId.Trim(), steamId.Trim(), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"SteamId mismatch for user {user.Id}: job SteamId does not match the account SteamId.");
+        }
     }
 
     private sealed record SyncGameInput(
