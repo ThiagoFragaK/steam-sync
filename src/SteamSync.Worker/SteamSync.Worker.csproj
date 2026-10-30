@@ -27,4 +27,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SteamSync.Shared\SteamSync.Shared.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SteamSync.Worker.Tests" />
+  </ItemGroup>
 </Project>
