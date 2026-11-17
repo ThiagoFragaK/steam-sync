@@ -35,7 +35,10 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("ConnectionStrings:Postgres (or DefaultConnection) is required.");
 
         services.AddDbContext<WorkerDbContext>(options => options.UseNpgsql(connectionString));
-        services.AddMemoryCache();
+        services.AddMemoryCache(options =>
+        {
+            options.SizeLimit = 2048;
+        });
         services.AddSingleton<SteamApiThrottle>();
         services.AddScoped<ISteamSyncService, SteamSyncService>();
         services.AddScoped<IGoalRefreshService, GoalRefreshService>();

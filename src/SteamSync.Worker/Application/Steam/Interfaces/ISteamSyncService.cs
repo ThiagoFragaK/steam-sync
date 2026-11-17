@@ -1,6 +1,4 @@
-using SteamSync.Worker.Application.Steam;
-using SteamSync.Worker.Application.Steam.Interfaces;
-using SteamSync.Worker.Infrastructure.Steam;
+using SteamSync.Worker.Infrastructure.Steam.Models;
 
 namespace SteamSync.Worker.Application.Steam.Interfaces;
 public interface ISteamSyncService
@@ -12,7 +10,22 @@ public interface ISteamSyncService
         int maxStoreEnrich = 5,
         CancellationToken cancellationToken = default);
 
-    Task SyncGameAchievementsAsync(int userId, string steamId, int appId, CancellationToken cancellationToken = default);
+    Task SyncGameAchievementsAsync(
+        int userId,
+        string steamId,
+        int appId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists achievement catalog/unlocks using Steam payloads fetched outside a DB transaction.
+    /// </summary>
+    Task SyncGameAchievementsAsync(
+        int userId,
+        string steamId,
+        int appId,
+        GameSchema? prefetchedSchema,
+        PlayerAchievementsResult? prefetchedPlayer,
+        CancellationToken cancellationToken = default);
 
     /// <returns>True when Steam returned usable achievement data for the game.</returns>
     Task<bool> SyncGameCompletionPercentageAsync(
