@@ -14,12 +14,18 @@ public class AchievementFetcher : IAchievementFetcher
     private const string StoreApiBaseUrl = "https://store.steampowered.com/api";
 
     private readonly HttpClient _httpClient;
+    private readonly SteamApiThrottle _steamGate;
     private readonly ILogger<AchievementFetcher> _logger;
     private readonly string _apiKey;
 
-    public AchievementFetcher(HttpClient httpClient, IOptions<SteamApiOptions> options, ILogger<AchievementFetcher> logger)
+    public AchievementFetcher(
+        HttpClient httpClient,
+        SteamApiThrottle steamGate,
+        IOptions<SteamApiOptions> options,
+        ILogger<AchievementFetcher> logger)
     {
         _httpClient = httpClient;
+        _steamGate = steamGate;
         _logger = logger;
 
         _apiKey = options.Value.ApiKey;
@@ -332,27 +338,33 @@ public class AchievementFetcher : IAchievementFetcher
 
     private async Task<JsonDocument?> GetJsonAsync(string url, CancellationToken cancellationToken, bool requireSuccessStatusCode = true)
     {
-        using var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (requireSuccessStatusCode && !response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Steam request failed with {StatusCode}", response.StatusCode);
-            return null;
-        }
-
+        await _steamGate.WaitAsync(cancellationToken);
         try
         {
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(json))
+            using var response = await _httpClient.GetAsync(
+                url,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            if (requireSuccessStatusCode && !response.IsSuccessStatusCode)
             {
+                _logger.LogWarning("Steam request failed with {StatusCode}", response.StatusCode);
                 return null;
             }
 
-            return JsonDocument.Parse(json);
+            try
+            {
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Steam response was not valid JSON");
+                return null;
+            }
         }
-        catch (JsonException ex)
+        finally
         {
-            _logger.LogWarning(ex, "Steam response was not valid JSON");
-            return null;
+            _steamGate.Release();
         }
     }
 

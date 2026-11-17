@@ -8,6 +8,7 @@ using SteamSync.Worker.Application.Goals.Interfaces;
 using SteamSync.Worker.Application.Steam;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Infrastructure.Steam;
+using SteamSync.Worker.Infrastructure.Steam.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,8 @@ namespace SteamSync.Worker.Application.Steam;
 
 public class SteamSyncService : ISteamSyncService
 {
+    private const int LibraryBatchSize = 250;
+
     private readonly WorkerDbContext _db;
     private readonly IAchievementFetcher _achievementFetcher;
     private readonly IGoalRefreshService _goals;
@@ -135,10 +138,13 @@ public class SteamSyncService : ISteamSyncService
             }
         }
 
+        var playtime2Weeks = recentGames.Sum(g => g.Playtime2WeeksMinutes);
+
         if (byAppId.Count == 0)
         {
-            user.Playtime2WeeksMinutes = recentGames.Sum(g => g.Playtime2WeeksMinutes);
+            user.Playtime2WeeksMinutes = playtime2Weeks;
             await _db.SaveChangesAsync(cancellationToken);
+            _db.ChangeTracker.Clear();
             _cache.Remove(RecentGamesCacheKeys.ForSteamId(steamId));
             _logger.LogInformation(
                 "Synced library ({Scope}) for user {UserId}: 0 games",
@@ -147,103 +153,126 @@ public class SteamSyncService : ISteamSyncService
             return;
         }
 
-        var steamIds = byAppId.Keys.Select(id => id.ToString()).ToList();
-        var existingGames = await LoadGamesBySteamIdsAsync(steamIds, cancellationToken);
-
-        var gamesBySteamId = existingGames
-            .ToDictionary(g => g.GameSteamId, StringComparer.Ordinal);
-
+        var inputs = byAppId.Values.ToList();
+        var gameIdBySteamId = new Dictionary<string, int>(StringComparer.Ordinal);
+        var hasStatsByGameId = new Dictionary<int, bool>();
         var storeEnrichBudget = Math.Max(0, maxStoreEnrich);
 
-        foreach (var input in byAppId.Values)
+        for (var offset = 0; offset < inputs.Count; offset += LibraryBatchSize)
         {
-            var steamAppId = input.AppId.ToString();
-            var iconHash = SteamMediaUrls.ToStorageHash(input.ImageUrl);
-            if (!gamesBySteamId.TryGetValue(steamAppId, out var game))
+            var batch = inputs.Skip(offset).Take(LibraryBatchSize).ToList();
+            var steamIds = batch.Select(i => i.AppId.ToString()).ToList();
+            var existingGames = await LoadGamesBySteamIdsAsync(steamIds, cancellationToken);
+            var gamesBySteamId = existingGames.ToDictionary(g => g.GameSteamId, StringComparer.Ordinal);
+
+            foreach (var input in batch)
             {
-                game = new Game
+                var steamAppId = input.AppId.ToString();
+                var iconHash = SteamMediaUrls.ToStorageHash(input.ImageUrl);
+                if (!gamesBySteamId.TryGetValue(steamAppId, out var game))
                 {
-                    GameSteamId = steamAppId,
-                    Name = string.IsNullOrWhiteSpace(input.Name) ? steamAppId : input.Name.Trim(),
-                    ImageUrl = iconHash,
-                    HasCommunityVisibleStats = input.HasCommunityVisibleStats
-                };
-                _db.Games.Add(game);
-                gamesBySteamId[steamAppId] = game;
-            }
-            else
-            {
-                if (!string.IsNullOrWhiteSpace(input.Name))
+                    game = new Game
+                    {
+                        GameSteamId = steamAppId,
+                        Name = string.IsNullOrWhiteSpace(input.Name) ? steamAppId : input.Name.Trim(),
+                        ImageUrl = iconHash,
+                        HasCommunityVisibleStats = input.HasCommunityVisibleStats
+                    };
+                    _db.Games.Add(game);
+                    gamesBySteamId[steamAppId] = game;
+                }
+                else
                 {
-                    game.Name = input.Name.Trim();
+                    if (!string.IsNullOrWhiteSpace(input.Name))
+                    {
+                        game.Name = input.Name.Trim();
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(iconHash))
+                    {
+                        game.ImageUrl = iconHash;
+                    }
+
+                    if (input.HasCommunityVisibleStats.HasValue)
+                    {
+                        game.HasCommunityVisibleStats = input.HasCommunityVisibleStats;
+                    }
                 }
 
-                if (!string.IsNullOrWhiteSpace(iconHash))
+                if (storeEnrichBudget > 0 && NeedsStoreEnrichment(game))
                 {
-                    game.ImageUrl = iconHash;
-                }
-
-                if (input.HasCommunityVisibleStats.HasValue)
-                {
-                    game.HasCommunityVisibleStats = input.HasCommunityVisibleStats;
+                    await EnrichGameFromStoreIfNeededAsync(game, input.AppId, cancellationToken);
+                    storeEnrichBudget--;
                 }
             }
 
-            if (storeEnrichBudget > 0 && NeedsStoreEnrichment(game))
+            await _db.SaveChangesAsync(cancellationToken);
+
+            foreach (var (steamAppId, game) in gamesBySteamId)
             {
-                await EnrichGameFromStoreIfNeededAsync(game, input.AppId, cancellationToken);
-                storeEnrichBudget--;
+                gameIdBySteamId[steamAppId] = game.Id;
+                hasStatsByGameId[game.Id] = game.HasCommunityVisibleStats == true;
             }
+
+            _db.ChangeTracker.Clear();
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
-
-        var persistedGameIds = gamesBySteamId.Values.Select(g => g.Id).ToList();
-        var existingUsersGames = await _db.UsersGames
-            .Where(ug => ug.UserId == userId && persistedGameIds.Contains(ug.GameId))
-            .ToListAsync(cancellationToken);
-
-        var usersGamesByGameId = existingUsersGames.ToDictionary(ug => ug.GameId);
-
-        foreach (var input in byAppId.Values)
+        for (var offset = 0; offset < inputs.Count; offset += LibraryBatchSize)
         {
-            var steamAppId = input.AppId.ToString();
-            var game = gamesBySteamId[steamAppId];
+            var batch = inputs.Skip(offset).Take(LibraryBatchSize).ToList();
+            var gameIds = batch
+                .Select(i => gameIdBySteamId[i.AppId.ToString()])
+                .Distinct()
+                .ToList();
 
-            if (!usersGamesByGameId.TryGetValue(game.Id, out var usersGame))
-            {
-                usersGame = new UsersGame
-                {
-                    UserId = userId,
-                    GameId = game.Id,
-                    AchievementsPercentage = 0,
-                    NeedsAchievementRefresh = game.HasCommunityVisibleStats == true
-                };
-                _db.UsersGames.Add(usersGame);
-                usersGamesByGameId[game.Id] = usersGame;
-            }
-            else
-            {
-                var playtimeChanged = usersGame.PlaytimeMinutes != input.PlaytimeMinutes;
-                var lastPlayedChanged = input.LastPlayedUnix.HasValue
-                    && usersGame.LastPlayedUnix != input.LastPlayedUnix;
+            var existingUsersGames = await LoadUsersGamesByGameIdsAsync(userId, gameIds, cancellationToken);
+            var usersGamesByGameId = existingUsersGames.ToDictionary(ug => ug.GameId);
 
-                if ((playtimeChanged || lastPlayedChanged) && game.HasCommunityVisibleStats == true)
+            foreach (var input in batch)
+            {
+                var gameId = gameIdBySteamId[input.AppId.ToString()];
+                var hasStats = hasStatsByGameId.GetValueOrDefault(gameId);
+
+                if (!usersGamesByGameId.TryGetValue(gameId, out var usersGame))
                 {
-                    usersGame.NeedsAchievementRefresh = true;
+                    usersGame = new UsersGame
+                    {
+                        UserId = userId,
+                        GameId = gameId,
+                        AchievementsPercentage = 0,
+                        NeedsAchievementRefresh = hasStats
+                    };
+                    _db.UsersGames.Add(usersGame);
+                    usersGamesByGameId[gameId] = usersGame;
+                }
+                else
+                {
+                    var playtimeChanged = usersGame.PlaytimeMinutes != input.PlaytimeMinutes;
+                    var lastPlayedChanged = input.LastPlayedUnix.HasValue
+                        && usersGame.LastPlayedUnix != input.LastPlayedUnix;
+
+                    if ((playtimeChanged || lastPlayedChanged) && hasStats)
+                    {
+                        usersGame.NeedsAchievementRefresh = true;
+                    }
+                }
+
+                usersGame.PlaytimeMinutes = input.PlaytimeMinutes;
+                if (input.LastPlayedUnix.HasValue)
+                {
+                    usersGame.LastPlayedUnix = input.LastPlayedUnix;
                 }
             }
 
-            usersGame.PlaytimeMinutes = input.PlaytimeMinutes;
-            if (input.LastPlayedUnix.HasValue)
-            {
-                usersGame.LastPlayedUnix = input.LastPlayedUnix;
-            }
+            await _db.SaveChangesAsync(cancellationToken);
+            _db.ChangeTracker.Clear();
         }
 
-        user.Playtime2WeeksMinutes = recentGames.Sum(g => g.Playtime2WeeksMinutes);
-
+        user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId} was not found.");
+        user.Playtime2WeeksMinutes = playtime2Weeks;
         await _db.SaveChangesAsync(cancellationToken);
+        _db.ChangeTracker.Clear();
 
         _cache.Remove(RecentGamesCacheKeys.ForSteamId(steamId));
 
@@ -252,7 +281,7 @@ public class SteamSyncService : ISteamSyncService
             scope,
             userId,
             byAppId.Count,
-            user.Playtime2WeeksMinutes);
+            playtime2Weeks);
     }
 
     public async Task<bool> SyncGameCompletionPercentageAsync(
@@ -311,10 +340,19 @@ public class SteamSyncService : ISteamSyncService
         return true;
     }
 
+    public Task SyncGameAchievementsAsync(
+        int userId,
+        string steamId,
+        int appId,
+        CancellationToken cancellationToken = default) =>
+        SyncGameAchievementsAsync(userId, steamId, appId, null, null, cancellationToken);
+
     public async Task SyncGameAchievementsAsync(
         int userId,
         string steamId,
         int appId,
+        GameSchema? prefetchedSchema,
+        PlayerAchievementsResult? prefetchedPlayer,
         CancellationToken cancellationToken = default)
     {
         if (appId <= 0)
@@ -351,9 +389,12 @@ public class SteamSyncService : ISteamSyncService
             && game.SchemaSyncedAt.Value > DateTimeOffset.UtcNow - schemaTtl
             && await _db.Achievements.AnyAsync(a => a.GameId == game.Id, cancellationToken);
 
+        Dictionary<string, Achievement>? catalogByApiName = null;
+
         if (!schemaFresh)
         {
-            var schema = await _achievementFetcher.GetGameSchemaAsync(appId, cancellationToken);
+            var schema = prefetchedSchema
+                ?? await _achievementFetcher.GetGameSchemaAsync(appId, cancellationToken);
             var schemaAchievements = (schema?.Achievements ?? [])
                 .Where(a => !string.IsNullOrWhiteSpace(a.Name))
                 .GroupBy(a => a.Name!, StringComparer.OrdinalIgnoreCase)
@@ -364,7 +405,7 @@ public class SteamSyncService : ISteamSyncService
                 .Where(a => a.GameId == game.Id)
                 .ToListAsync(cancellationToken);
 
-            var catalogByApiName = existingCatalog
+            catalogByApiName = existingCatalog
                 .ToDictionary(a => a.ApiName, StringComparer.OrdinalIgnoreCase);
 
             foreach (var schemaRow in schemaAchievements)
@@ -400,7 +441,8 @@ public class SteamSyncService : ISteamSyncService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        var playerResult = await _achievementFetcher.GetPlayerAchievementsAsync(steamId, appId, cancellationToken);
+        var playerResult = prefetchedPlayer
+            ?? await _achievementFetcher.GetPlayerAchievementsAsync(steamId, appId, cancellationToken);
         if (playerResult is null || !playerResult.Success)
         {
             _logger.LogWarning(
@@ -412,6 +454,7 @@ public class SteamSyncService : ISteamSyncService
             usersGame.NeedsAchievementRefresh = false;
             usersGame.AchievementsSyncedAt = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
+            _db.ChangeTracker.Clear();
             return;
         }
 
@@ -419,12 +462,24 @@ public class SteamSyncService : ISteamSyncService
             .Where(a => a.Achieved == 1 && !string.IsNullOrWhiteSpace(a.ApiName))
             .ToDictionary(a => a.ApiName!, a => a, StringComparer.OrdinalIgnoreCase);
 
-        var refreshedCatalog = await _db.Achievements
-            .Where(a => a.GameId == game.Id)
-            .ToListAsync(cancellationToken);
-
-        var achievementIdsByApiName = refreshedCatalog
-            .ToDictionary(a => a.ApiName, a => a.Id, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, int> achievementIdsByApiName;
+        int totalAchievements;
+        if (catalogByApiName is not null)
+        {
+            achievementIdsByApiName = catalogByApiName
+                .ToDictionary(kv => kv.Key, kv => kv.Value.Id, StringComparer.OrdinalIgnoreCase);
+            totalAchievements = catalogByApiName.Count;
+        }
+        else
+        {
+            var refreshedCatalog = await _db.Achievements
+                .Where(a => a.GameId == game.Id)
+                .Select(a => new { a.ApiName, a.Id })
+                .ToListAsync(cancellationToken);
+            achievementIdsByApiName = refreshedCatalog
+                .ToDictionary(a => a.ApiName, a => a.Id, StringComparer.OrdinalIgnoreCase);
+            totalAchievements = refreshedCatalog.Count;
+        }
 
         var existingUnlocks = await _db.UsersAchievements
             .Where(ua => ua.UserId == userId && ua.GameId == game.Id)
@@ -463,9 +518,11 @@ public class SteamSyncService : ISteamSyncService
             _db.UsersAchievements.Remove(stale);
         }
 
-        var totalAchievements = refreshedCatalog.Count > 0
-            ? refreshedCatalog.Count
-            : playerResult.Achievements.Count;
+        if (totalAchievements == 0)
+        {
+            totalAchievements = playerResult.Achievements.Count;
+        }
+
         var unlockedCount = unlockedAchievementIds.Count > 0
             ? unlockedAchievementIds.Count
             : playerResult.Achievements.Count(a => a.Achieved == 1);
@@ -479,6 +536,7 @@ public class SteamSyncService : ISteamSyncService
 
         await _db.SaveChangesAsync(cancellationToken);
         await _goals.RefreshForGameAsync(userId, game.Id, cancellationToken);
+        _db.ChangeTracker.Clear();
 
         _logger.LogInformation(
             "Synced achievements for user {UserId} app {AppId}: {Unlocked}/{Total}",
@@ -511,9 +569,14 @@ public class SteamSyncService : ISteamSyncService
             {
                 _logger.LogWarning(ex, "Achievement sync failed for user {UserId} app {AppId}", userId, appId);
             }
+            finally
+            {
+                _db.ChangeTracker.Clear();
+            }
         }
 
         await RecomputeUserAchievementStatsAsync(userId, cancellationToken);
+        _db.ChangeTracker.Clear();
     }
 
     public async Task RecomputeUserAchievementStatsAsync(int userId, CancellationToken cancellationToken = default)
@@ -761,6 +824,25 @@ public class SteamSyncService : ISteamSyncService
             var chunk = steamIds.Skip(i).Take(chunkSize).ToList();
             var rows = await _db.Games
                 .Where(g => chunk.Contains(g.GameSteamId))
+                .ToListAsync(cancellationToken);
+            result.AddRange(rows);
+        }
+
+        return result;
+    }
+
+    private async Task<List<UsersGame>> LoadUsersGamesByGameIdsAsync(
+        int userId,
+        IReadOnlyList<int> gameIds,
+        CancellationToken cancellationToken)
+    {
+        const int chunkSize = 500;
+        var result = new List<UsersGame>();
+        for (var i = 0; i < gameIds.Count; i += chunkSize)
+        {
+            var chunk = gameIds.Skip(i).Take(chunkSize).ToList();
+            var rows = await _db.UsersGames
+                .Where(ug => ug.UserId == userId && chunk.Contains(ug.GameId))
                 .ToListAsync(cancellationToken);
             result.AddRange(rows);
         }

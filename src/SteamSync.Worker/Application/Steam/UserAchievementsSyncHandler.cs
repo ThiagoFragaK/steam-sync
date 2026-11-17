@@ -4,6 +4,7 @@ using SteamSync.Shared.Messages;
 using SteamSync.Worker.Application.Steam.Interfaces;
 using SteamSync.Worker.Domain.Entities;
 using SteamSync.Worker.Infrastructure.Persistence;
+using SteamSync.Worker.Infrastructure.Steam.Models;
 
 namespace SteamSync.Worker.Application.Steam;
 
@@ -12,6 +13,7 @@ public class UserAchievementsSyncHandler
     private readonly ISteamSyncService _steamSyncService;
     private readonly ISyncRepository _syncRepository;
     private readonly ISyncJobPublisher _publisher;
+    private readonly IAchievementFetcher _achievementFetcher;
     private readonly WorkerDbContext _db;
     private readonly ILogger<UserAchievementsSyncHandler> _logger;
 
@@ -19,12 +21,14 @@ public class UserAchievementsSyncHandler
         ISteamSyncService steamSyncService,
         ISyncRepository syncRepository,
         ISyncJobPublisher publisher,
+        IAchievementFetcher achievementFetcher,
         WorkerDbContext db,
         ILogger<UserAchievementsSyncHandler> logger)
     {
         _steamSyncService = steamSyncService;
         _syncRepository = syncRepository;
         _publisher = publisher;
+        _achievementFetcher = achievementFetcher;
         _db = db;
         _logger = logger;
     }
@@ -83,6 +87,15 @@ public class UserAchievementsSyncHandler
             .AsNoTracking()
             .AnyAsync(ug => ug.UserId == userId && ug.GameId == game.Id, cancellationToken);
 
+        // Fetch Steam outside any DB transaction so locks are not held across network I/O.
+        GameSchema? schema = null;
+        PlayerAchievementsResult? player = null;
+        if (game.HasCommunityVisibleStats == true)
+        {
+            schema = await _achievementFetcher.GetGameSchemaAsync(appId, cancellationToken);
+            player = await _achievementFetcher.GetPlayerAchievementsAsync(steamId, appId, cancellationToken);
+        }
+
         await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -123,7 +136,13 @@ public class UserAchievementsSyncHandler
                 return true;
             }
 
-            await _steamSyncService.SyncGameAchievementsAsync(userId, steamId, appId, cancellationToken);
+            await _steamSyncService.SyncGameAchievementsAsync(
+                userId,
+                steamId,
+                appId,
+                schema,
+                player,
+                cancellationToken);
             await tx.CommitAsync(cancellationToken);
             return true;
         }

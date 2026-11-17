@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 using RabbitMQ.Client;
 using SteamSync.Shared.Messages;
 using SteamSync.Worker.Application.Steam.Interfaces;
@@ -10,16 +11,22 @@ namespace SteamSync.Worker.Infrastructure.Messaging;
 public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan GlobalDedupeTtl = TimeSpan.FromHours(6);
 
     private readonly IRabbitMqConnectionFactory _connectionFactory;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<SyncJobPublisher> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IConnection? _connection;
     private IChannel? _channel;
 
-    public SyncJobPublisher(IRabbitMqConnectionFactory connectionFactory, ILogger<SyncJobPublisher> logger)
+    public SyncJobPublisher(
+        IRabbitMqConnectionFactory connectionFactory,
+        IMemoryCache cache,
+        ILogger<SyncJobPublisher> logger)
     {
         _connectionFactory = connectionFactory;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -87,8 +94,27 @@ public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
             job,
             cancellationToken);
 
-    public Task PublishGlobalAchievementUpdateAsync(GlobalAchievementUpdateJob job, CancellationToken cancellationToken = default) =>
-        PublishToQueueAsync(SyncQueueNames.GlobalAchievementUpdate, job, cancellationToken);
+    public async Task PublishGlobalAchievementUpdateAsync(
+        GlobalAchievementUpdateJob job,
+        CancellationToken cancellationToken = default)
+    {
+        var dedupeKey = $"global-percent-enqueued:{job.AppId}";
+        if (_cache.TryGetValue(dedupeKey, out _))
+        {
+            _logger.LogDebug("Skipping duplicate global-percent job for app {AppId}", job.AppId);
+            return;
+        }
+
+        await PublishToQueueAsync(SyncQueueNames.GlobalAchievementUpdate, job, cancellationToken);
+        _cache.Set(
+            dedupeKey,
+            true,
+            new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = GlobalDedupeTtl,
+                Size = 1
+            });
+    }
 
     public Task PublishGlobalAchievementUpdateDeadLetterAsync(
         GlobalAchievementUpdateJob job,
@@ -101,16 +127,24 @@ public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
 
     private async Task PublishToQueueAsync<T>(string routingKey, T job, CancellationToken cancellationToken)
     {
-        var channel = await EnsureChannelAsync(cancellationToken);
-        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
-        var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
-        await channel.BasicPublishAsync(
-            exchange: string.Empty,
-            routingKey: routingKey,
-            mandatory: false,
-            basicProperties: props,
-            body: body,
-            cancellationToken: cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var channel = await EnsureChannelUnlockedAsync(cancellationToken);
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
+            var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
+            await channel.BasicPublishAsync(
+                exchange: string.Empty,
+                routingKey: routingKey,
+                mandatory: false,
+                basicProperties: props,
+                body: body,
+                cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private async Task PublishToExchangeAsync<T>(
@@ -119,45 +153,40 @@ public sealed class SyncJobPublisher : ISyncJobPublisher, IAsyncDisposable
         T job,
         CancellationToken cancellationToken)
     {
-        var channel = await EnsureChannelAsync(cancellationToken);
-        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
-        var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
-        await channel.BasicPublishAsync(
-            exchange: exchange,
-            routingKey: routingKey,
-            mandatory: false,
-            basicProperties: props,
-            body: body,
-            cancellationToken: cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var channel = await EnsureChannelUnlockedAsync(cancellationToken);
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, JsonOptions));
+            var props = new BasicProperties { ContentType = "application/json", DeliveryMode = DeliveryModes.Persistent };
+            await channel.BasicPublishAsync(
+                exchange: exchange,
+                routingKey: routingKey,
+                mandatory: false,
+                basicProperties: props,
+                body: body,
+                cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
-    private async Task<IChannel> EnsureChannelAsync(CancellationToken cancellationToken)
+    private async Task<IChannel> EnsureChannelUnlockedAsync(CancellationToken cancellationToken)
     {
         if (_channel is { IsOpen: true })
         {
             return _channel;
         }
 
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            if (_channel is { IsOpen: true })
-            {
-                return _channel;
-            }
+        _connection?.Dispose();
+        _channel?.Dispose();
 
-            _connection?.Dispose();
-            _channel?.Dispose();
-
-            _connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-            _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
-            _logger.LogDebug("RabbitMQ publisher channel ready");
-            return _channel;
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        _connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        _logger.LogDebug("RabbitMQ publisher channel ready");
+        return _channel;
     }
 
     public async ValueTask DisposeAsync()

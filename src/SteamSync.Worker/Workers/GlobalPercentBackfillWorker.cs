@@ -14,6 +14,7 @@ namespace SteamSync.Worker.Workers;
 public sealed class GlobalPercentBackfillWorker : BackgroundService
 {
     private const int LogEvery = 100;
+    private const int PageSize = 200;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly SyncWorkerOptions _options;
@@ -56,50 +57,57 @@ public sealed class GlobalPercentBackfillWorker : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<WorkerDbContext>();
         var publisher = scope.ServiceProvider.GetRequiredService<ISyncJobPublisher>();
 
-        var steamIds = await db.Games
-            .AsNoTracking()
-            .Where(g => g.Achievements.Any())
-            .Where(g =>
-                g.GlobalPercentSyncedAt == null
-                || g.Achievements.Any(a => a.GlobalPercentage == null))
-            .Select(g => g.GameSteamId)
-            .ToListAsync(cancellationToken);
-
-        var appIds = steamIds
-            .Select(id => int.TryParse(id, out var appId) ? appId : 0)
-            .Where(id => id > 0)
-            .Distinct()
-            .ToList();
-
-        _logger.LogInformation(
-            "Global percent backfill: enqueueing {Count} apps",
-            appIds.Count);
-
         var published = 0;
-        foreach (var appId in appIds)
+        var lastId = 0;
+
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await publisher.PublishGlobalAchievementUpdateAsync(
-                new GlobalAchievementUpdateJob
-                {
-                    JobId = Guid.NewGuid(),
-                    AppId = appId
-                },
-                cancellationToken);
+            var page = await db.Games
+                .AsNoTracking()
+                .Where(g => g.Id > lastId)
+                .Where(g => g.Achievements.Any())
+                .Where(g =>
+                    g.GlobalPercentSyncedAt == null
+                    || g.Achievements.Any(a => a.GlobalPercentage == null))
+                .OrderBy(g => g.Id)
+                .Select(g => new { g.Id, g.GameSteamId })
+                .Take(PageSize)
+                .ToListAsync(cancellationToken);
 
-            published++;
-            if (published % LogEvery == 0)
+            if (page.Count == 0)
             {
-                _logger.LogInformation(
-                    "Global percent backfill progress: {Published}/{Total}",
-                    published,
-                    appIds.Count);
+                break;
+            }
+
+            foreach (var row in page)
+            {
+                lastId = row.Id;
+                if (!int.TryParse(row.GameSteamId, out var appId) || appId <= 0)
+                {
+                    continue;
+                }
+
+                await publisher.PublishGlobalAchievementUpdateAsync(
+                    new GlobalAchievementUpdateJob
+                    {
+                        JobId = Guid.NewGuid(),
+                        AppId = appId
+                    },
+                    cancellationToken);
+
+                published++;
+                if (published % LogEvery == 0)
+                {
+                    _logger.LogInformation(
+                        "Global percent backfill progress: {Published} published (cursor game id {LastId})",
+                        published,
+                        lastId);
+                }
             }
         }
 
-        _logger.LogInformation(
-            "Global percent backfill finished: published {Published} jobs. Set EnqueueGlobalPercentBackfillOnStartup to false after the queue drains.",
-            published);
+        _logger.LogInformation("Global percent backfill finished: {Published} jobs published", published);
     }
 }
